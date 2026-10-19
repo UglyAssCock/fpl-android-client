@@ -22,11 +22,14 @@ data class EventDto(
 data class TeamDto(
     @SerializedName("id") val id: Int,
     @SerializedName("name") val name: String,
-    @SerializedName("short_name") val shortName: String
+    @SerializedName("short_name") val shortName: String,
+    @SerializedName("code") val code: Int = 0
 )
 
 data class PlayerDto(
     @SerializedName("id") val id: Int,
+    @SerializedName("code") val code: Int = 0,
+    @SerializedName("photo") val photo: String = "",
     @SerializedName("first_name") val firstName: String,
     @SerializedName("second_name") val secondName: String,
     @SerializedName("web_name") val webName: String,
@@ -57,6 +60,12 @@ data class PlayerDto(
             4 -> "FWD"
             else -> "UNK"
         }
+
+    val photoUrl: String
+        get() {
+            val cleanCode = if (code != 0) code.toString() else photo.substringBefore(".")
+            return "https://resources.premierleague.com/premierleague/photos/players/110x140/p$cleanCode.png"
+        }
 }
 
 data class ElementSummaryResponse(
@@ -86,6 +95,7 @@ data class FixtureDto(
     @SerializedName("finished") val finished: Boolean?
 )
 
+// Manager Entry + Leagues + Cups
 data class ManagerEntryDto(
     @SerializedName("id") val id: Int,
     @SerializedName("name") val teamName: String,
@@ -93,10 +103,82 @@ data class ManagerEntryDto(
     @SerializedName("player_last_name") val playerLastName: String,
     @SerializedName("summary_overall_points") val summaryOverallPoints: Int,
     @SerializedName("summary_overall_rank") val summaryOverallRank: Int?,
-    @SerializedName("summary_event_points") val summaryEventPoints: Int,
-    @SerializedName("current_event") val currentEvent: Int?
+    @SerializedName("summary_event_points") val summaryEventPoints: Int?,
+    @SerializedName("current_event") val currentEvent: Int?,
+    @SerializedName("last_deadline_bank") val lastDeadlineBank: Int?,
+    @SerializedName("last_deadline_value") val lastDeadlineValue: Int?,
+    @SerializedName("leagues") val leagues: ManagerLeaguesDto?
 )
 
+data class ManagerLeaguesDto(
+    @SerializedName("classic") val classic: List<ClassicLeagueInfoDto> = emptyList(),
+    @SerializedName("h2h") val h2h: List<ClassicLeagueInfoDto> = emptyList(),
+    @SerializedName("cup") val cup: CupDto? = null,
+    @SerializedName("cup_matches") val cupMatches: List<CupMatchDto> = emptyList()
+)
+
+data class ClassicLeagueInfoDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String,
+    @SerializedName("league_type") val leagueType: String?,
+    @SerializedName("entry_rank") val entryRank: Int?,
+    @SerializedName("entry_last_rank") val entryLastRank: Int?
+)
+
+data class CupDto(
+    @SerializedName("matches") val matches: List<CupMatchDto> = emptyList(),
+    @SerializedName("status") val status: CupStatusDto? = null
+)
+
+data class CupStatusDto(
+    @SerializedName("qualification_event") val qualificationEvent: Int?,
+    @SerializedName("qualification_numbers") val qualificationNumbers: Int?,
+    @SerializedName("qualification_rank") val qualificationRank: Int?,
+    @SerializedName("qualification_state") val qualificationState: String?
+)
+
+data class CupMatchDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("event") val event: Int,
+    @SerializedName("entry_1_entry") val entry1Id: Int,
+    @SerializedName("entry_1_name") val entry1Name: String,
+    @SerializedName("entry_1_player_name") val entry1PlayerName: String,
+    @SerializedName("entry_1_points") val entry1Points: Int,
+    @SerializedName("entry_2_entry") val entry2Id: Int,
+    @SerializedName("entry_2_name") val entry2Name: String,
+    @SerializedName("entry_2_player_name") val entry2PlayerName: String,
+    @SerializedName("entry_2_points") val entry2Points: Int,
+    @SerializedName("winner") val winner: Int?
+)
+
+// Classic League Standings
+data class LeagueStandingsResponse(
+    @SerializedName("league") val league: LeagueMetaDto,
+    @SerializedName("standings") val standings: StandingsPageDto
+)
+
+data class LeagueMetaDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String
+)
+
+data class StandingsPageDto(
+    @SerializedName("has_next") val hasNext: Boolean = false,
+    @SerializedName("results") val results: List<StandingResultDto> = emptyList()
+)
+
+data class StandingResultDto(
+    @SerializedName("id") val id: Int,
+    @SerializedName("entry") val entry: Int,
+    @SerializedName("entry_name") val entryName: String,
+    @SerializedName("player_name") val playerName: String,
+    @SerializedName("rank") val rank: Int,
+    @SerializedName("last_rank") val lastRank: Int,
+    @SerializedName("event_total") val eventTotal: Int,
+    @SerializedName("total") val total: Int
+)
+
+// Squad Picks
 data class ManagerPicksResponse(
     @SerializedName("entry_history") val entryHistory: EntryHistoryDto,
     @SerializedName("picks") val picks: List<PickDto> = emptyList()
@@ -120,4 +202,38 @@ data class PickDto(
     @SerializedName("multiplier") val multiplier: Int,
     @SerializedName("is_captain") val isCaptain: Boolean,
     @SerializedName("is_vice_captain") val isViceCaptain: Boolean
+)
+
+// Login & Authenticated User Endpoint (/api/me/)
+data class MeResponse(
+    @SerializedName("player") val player: MePlayerDto?
+)
+
+data class MePlayerDto(
+    @SerializedName("first_name") val firstName: String?,
+    @SerializedName("last_name") val lastName: String?,
+    @SerializedName("entry") val entry: Int?,
+    @SerializedName("email") val email: String?
+)
+
+// Transfers Models
+data class PlannedTransfer(
+    val playerOut: PlayerDto,
+    val playerIn: PlayerDto
+)
+
+data class TransferRequestPayload(
+    @SerializedName("confirmed") val confirmed: Boolean = false,
+    @SerializedName("entry") val entry: Int,
+    @SerializedName("event") val event: Int,
+    @SerializedName(" transfers") val transfers: List<TransferItemPayload>,
+    @SerializedName("wildcard") val wildcard: Boolean = false,
+    @SerializedName("freehit") val freehit: Boolean = false
+)
+
+data class TransferItemPayload(
+    @SerializedName("element_in") val elementIn: Int,
+    @SerializedName("element_out") val elementOut: Int,
+    @SerializedName("purchase_price") val purchasePrice: Int,
+    @SerializedName("selling_price") val sellingPrice: Int
 )
