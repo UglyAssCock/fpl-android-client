@@ -13,12 +13,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Login
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,9 +49,12 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.fpl.ui.screens.FixturesScreen
+import com.example.fpl.ui.screens.FplLoginDialog
+import com.example.fpl.ui.screens.LeaguesAndCupsScreen
 import com.example.fpl.ui.screens.MyTeamScreen
 import com.example.fpl.ui.screens.PlayerDetailScreen
 import com.example.fpl.ui.screens.PlayersScreen
+import com.example.fpl.ui.screens.TransfersScreen
 import com.example.fpl.ui.theme.FplTheme
 import com.example.fpl.ui.viewmodel.FplViewModel
 
@@ -72,16 +79,43 @@ fun FplApp(viewModel: FplViewModel) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: "players"
 
+    if (state.showLoginDialog) {
+        FplLoginDialog(
+            state = state,
+            onDismiss = { viewModel.openLoginDialog(false) },
+            onLoginSubmit = { email, password, teamId ->
+                viewModel.login(email, password, teamId)
+            },
+            onLogout = { viewModel.logout() }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Fantasy Premier League",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Column {
+                        Text(
+                            text = "FPL Companion",
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (state.isLoggedIn) {
+                            Text(
+                                text = state.loggedInEmail,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.openLoginDialog(true) }) {
+                        Icon(
+                            imageVector = if (state.isLoggedIn) Icons.Default.AccountCircle else Icons.AutoMirrored.Filled.Login,
+                            contentDescription = "Login",
+                            tint = if (state.isLoggedIn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
                     IconButton(onClick = { viewModel.toggleDarkMode() }) {
                         Icon(
                             imageVector = if (state.isDarkMode) Icons.Default.LightMode else Icons.Default.DarkMode,
@@ -118,8 +152,30 @@ fun FplApp(viewModel: FplViewModel) {
                             launchSingleTop = true
                         }
                     },
-                    icon = { Icon(Icons.Default.Groups, contentDescription = "My Team") },
-                    label = { Text("My Team") }
+                    icon = { Icon(Icons.Default.Groups, contentDescription = "Pitch") },
+                    label = { Text("Pitch") }
+                )
+                NavigationBarItem(
+                    selected = currentRoute == "transfers",
+                    onClick = {
+                        navController.navigate("transfers") {
+                            popUpTo("players") { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                    icon = { Icon(Icons.Default.SwapHoriz, contentDescription = "Transfers") },
+                    label = { Text("Transfers") }
+                )
+                NavigationBarItem(
+                    selected = currentRoute == "leagues",
+                    onClick = {
+                        navController.navigate("leagues") {
+                            popUpTo("players") { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    },
+                    icon = { Icon(Icons.Default.EmojiEvents, contentDescription = "Leagues") },
+                    label = { Text("Leagues") }
                 )
                 NavigationBarItem(
                     selected = currentRoute == "fixtures",
@@ -204,9 +260,33 @@ fun FplApp(viewModel: FplViewModel) {
                                 state = state,
                                 onTeamIdChange = viewModel::updateTeamIdInput,
                                 onLoadTeam = viewModel::loadMyTeam,
+                                onTogglePitchView = viewModel::setPitchView,
                                 onPlayerClick = { playerId ->
                                     viewModel.loadPlayerDetails(playerId)
                                     navController.navigate("player_detail/$playerId")
+                                }
+                            )
+                        }
+                        composable("transfers") {
+                            TransfersScreen(
+                                state = state,
+                                onGenerateTemplateSquad = viewModel::generateSampleSquadIfEmpty,
+                                onSelectPlayerOut = viewModel::selectPlayerForTransferOut,
+                                onTransferSearchChange = viewModel::updateTransferSearchQuery,
+                                onConfirmReplacement = viewModel::makeTransfer,
+                                onResetTransfers = viewModel::resetTransfers,
+                                onSubmitTransfers = viewModel::submitPlannedTransfers
+                            )
+                        }
+                        composable("leagues") {
+                            LeaguesAndCupsScreen(
+                                state = state,
+                                onOpenLeagueStandings = viewModel::loadClassicLeagueStandings,
+                                onCloseLeagueStandings = viewModel::closeLeagueStandings,
+                                onInspectRivalTeam = { rivalEntryId ->
+                                    viewModel.closeLeagueStandings()
+                                    viewModel.loadMyTeamById(rivalEntryId)
+                                    navController.navigate("my_team")
                                 }
                             )
                         }
