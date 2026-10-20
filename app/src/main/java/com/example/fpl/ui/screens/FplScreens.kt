@@ -2,6 +2,10 @@
 
 package com.example.fpl.ui.screens
 
+import android.annotation.SuppressLint
+import android.webkit.CookieManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -109,9 +113,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import com.example.fpl.data.model.PlayerDto
+import com.example.fpl.data.remote.FplApiService
 import com.example.fpl.ui.theme.FplAccentGreen
 import com.example.fpl.ui.theme.FplBgNavy
 import com.example.fpl.ui.theme.FplBrightPurple
@@ -122,9 +128,11 @@ import com.example.fpl.ui.theme.FplElectricPurple
 import com.example.fpl.ui.theme.FplOutCrimson
 import com.example.fpl.ui.theme.FplTextSecondary
 import com.example.fpl.ui.viewmodel.FplUiState
+import okhttp3.Cookie
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 // =========================================================================
-// REAL PLAYER FACE AVATAR (OFFICIAL PL CDN + FALLBACK) & BRAND GRAPHICS
+// 2026/27 PLAYER FACE AVATAR (PRIORITIZES NEW SEASON CDN WITHOUT 'p' PREFIX)
 // =========================================================================
 
 @Composable
@@ -135,14 +143,16 @@ fun PlayerPhotoAvatar(
     borderColor: Color = Color.White.copy(alpha = 0.65f)
 ) {
     val context = LocalContext.current
-    // Extract clean numeric code from player.code or player.photo / player.photoUrl
-    val rawCode = when {
-        player.code != 0 -> player.code.toString()
-        player.photo.isNotBlank() -> player.photo.substringBefore(".")
-        else -> player.photoUrl.substringAfterLast("/p").substringBefore(".png")
-    }
-    val primaryUrl = "https://resources.premierleague.com/premierleague/photos/players/110x140/p$rawCode.png"
-    val secondaryUrl = "https://resources.premierleague.com/premierleague25/photos/players/110x140/$rawCode.png"
+    val cleanCode = player.cleanPhotoCode
+
+    // 1st priority: 2026/27 season high-res 250x250 & 110x140 (no 'p' prefix)
+    val currentSeason250Url =
+        "https://resources.premierleague.com/premierleague25/photos/players/250x250/$cleanCode.png"
+    val currentSeason110Url =
+        "https://resources.premierleague.com/premierleague25/photos/players/110x140/$cleanCode.png"
+    // Fallback only if a newly promoted academy player isn't on the 250/110 endpoint yet
+    val legacyFallbackUrl =
+        "https://resources.premierleague.com/premierleague/photos/players/110x140/p$cleanCode.png"
 
     Box(
         modifier = Modifier
@@ -154,8 +164,8 @@ fun PlayerPhotoAvatar(
     ) {
         SubcomposeAsyncImage(
             model = ImageRequest.Builder(context)
-                .data(primaryUrl)
-                .setHeader("User-Agent", "Mozilla/5.0")
+                .data(currentSeason110Url)
+                .setHeader("User-Agent", FplApiService.USER_AGENT)
                 .crossfade(true)
                 .build(),
             contentDescription = player.webName,
@@ -165,8 +175,8 @@ fun PlayerPhotoAvatar(
             error = {
                 SubcomposeAsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(secondaryUrl)
-                        .setHeader("User-Agent", "Mozilla/5.0")
+                        .data(currentSeason250Url)
+                        .setHeader("User-Agent", FplApiService.USER_AGENT)
                         .crossfade(true)
                         .build(),
                     contentDescription = player.webName,
@@ -174,10 +184,23 @@ fun PlayerPhotoAvatar(
                     alignment = Alignment.TopCenter,
                     modifier = Modifier.fillMaxSize(),
                     error = {
-                        ClubKitIcon(
-                            teamShortName = teamShortName,
-                            isGoalkeeper = player.elementType == 1,
-                            size = size * 0.78f
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(legacyFallbackUrl)
+                                .setHeader("User-Agent", FplApiService.USER_AGENT)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = player.webName,
+                            contentScale = ContentScale.Crop,
+                            alignment = Alignment.TopCenter,
+                            modifier = Modifier.fillMaxSize(),
+                            error = {
+                                ClubKitIcon(
+                                    teamShortName = teamShortName,
+                                    isGoalkeeper = player.elementType == 1,
+                                    size = size * 0.78f
+                                )
+                            }
                         )
                     }
                 )
@@ -462,7 +485,7 @@ fun FplStyledCard(
 }
 
 // =========================================================================
-// FULL-SCREEN LOG IN & SIGN UP (EMAIL & PASSWORD ONLY — NO TEAM ID LOGIN)
+// NEW PREMIER LEAGUE PINGONE OIDC (account.premierleague.com) LOGIN & SIGN UP
 // =========================================================================
 
 @Composable
@@ -471,13 +494,28 @@ fun FplFullAuthScreen(
     onSelectSignUpMode: (Boolean) -> Unit,
     onLogin: (email: String, password: String) -> Unit,
     onSignUp: (fullName: String, email: String, password: String, confirmPassword: String) -> Unit,
+    onOpenOfficialWebLogin: (Boolean) -> Unit,
+    onOfficialWebAuthSuccess: (accessToken: String?, email: String) -> Unit,
     onClose: (() -> Unit)? = null
 ) {
     var fullName by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(state.pendingAuthEmail) }
+    var password by remember { mutableStateOf(state.pendingAuthPassword) }
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+
+    // If PingOne OAuth WebView is active, display the embedded account.premierleague.com OIDC flow
+    if (state.showOfficialWebLogin) {
+        OfficialPremierLeagueOAuthWebView(
+            prefillEmail = email.ifBlank { state.pendingAuthEmail },
+            prefillPassword = password.ifBlank { state.pendingAuthPassword },
+            onAuthSuccess = { token ->
+                onOfficialWebAuthSuccess(token, email.ifBlank { state.pendingAuthEmail })
+            },
+            onCancel = { onOpenOfficialWebLogin(false) }
+        )
+        return
+    }
 
     Box(
         modifier = Modifier
@@ -673,7 +711,7 @@ fun FplFullAuthScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Create your dream team. Compete with\nfriends. Win every week.",
+                    text = "Sign in with your Premier League account\n(account.premierleague.com)",
                     fontSize = 13.sp,
                     color = FplTextSecondary,
                     textAlign = TextAlign.Center
@@ -681,7 +719,6 @@ fun FplFullAuthScreen(
 
                 Spacer(modifier = Modifier.height(22.dp))
 
-                // Log In | Sign Up Segmented Pill Toggle
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -720,7 +757,7 @@ fun FplFullAuthScreen(
                     value = email,
                     onValueChange = { email = it },
                     label = "Email address",
-                    placeholder = "Enter your email address",
+                    placeholder = "Enter your FPL email address",
                     leadingIcon = Icons.Default.Email,
                     keyboardType = KeyboardType.Email
                 )
@@ -729,7 +766,7 @@ fun FplFullAuthScreen(
                     value = password,
                     onValueChange = { password = it },
                     label = "Password",
-                    placeholder = "Enter your password",
+                    placeholder = "Enter your FPL password",
                     leadingIcon = Icons.Default.Lock,
                     isPassword = true,
                     passwordVisible = passwordVisible,
@@ -770,11 +807,31 @@ fun FplFullAuthScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                OutlinedButton(
+                    onClick = { onOpenOfficialWebLogin(true) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, FplBrightPurple)
+                ) {
+                    Icon(Icons.Default.Lock, contentDescription = null, tint = FplBrightPurple, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Official Premier League SSO Login (2FA)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(14.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("New to FPL Companion? ", color = FplTextSecondary, fontSize = 13.sp)
+                    Text("Don't have an account? ", color = FplTextSecondary, fontSize = 13.sp)
                     Text(
-                        text = "Create an Account",
+                        text = "Sign Up",
                         color = FplBrightPurple,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
@@ -790,6 +847,156 @@ fun FplFullAuthScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * Official Premier League OIDC (account.premierleague.com/as) WebView Authenticator.
+ * Automatically pre-fills the user's email & password, completes PingOne OAuth2 PKCE,
+ * and extracts the `oidc.user:https://account.premierleague.com/as:...` access_token.
+ */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun OfficialPremierLeagueOAuthWebView(
+    prefillEmail: String,
+    prefillPassword: String,
+    onAuthSuccess: (accessToken: String?) -> Unit,
+    onCancel: () -> Unit
+) {
+    var currentUrl by remember { mutableStateOf("https://fantasy.premierleague.com/") }
+    var authCompleted by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FplBgNavy)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(FplCardNavy)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onCancel) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Cancel",
+                        tint = Color.White
+                    )
+                }
+                Column {
+                    Text(
+                        text = "Premier League Official Sign In",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = Color.White
+                    )
+                    Text(
+                        text = currentUrl.take(45),
+                        fontSize = 11.sp,
+                        color = FplTextSecondary,
+                        maxLines = 1
+                    )
+                }
+            }
+            TextButton(onClick = onCancel) {
+                Text("Close", color = FplBrightPurple)
+            }
+        }
+
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { context ->
+                WebView(context).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.userAgentString = FplApiService.USER_AGENT
+
+                    val cookieManager = CookieManager.getInstance()
+                    cookieManager.setAcceptCookie(true)
+                    cookieManager.setAcceptThirdPartyCookies(this, true)
+
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            val safeUrl = url.orEmpty()
+                            currentUrl = safeUrl
+
+                            // Sync any premierleague.com cookies into OkHttp SessionCookieJar
+                            val rawCookies = cookieManager.getCookie(safeUrl).orEmpty()
+                            if (rawCookies.isNotBlank() && safeUrl.startsWith("http")) {
+                                val httpUrl = runCatching { safeUrl.toHttpUrl() }.getOrNull()
+                                if (httpUrl != null) {
+                                    val parsed = rawCookies.split(";").mapNotNull { part ->
+                                        Cookie.parse(httpUrl, part.trim())
+                                    }
+                                    FplApiService.cookieJar.saveFromResponse(httpUrl, parsed)
+                                }
+                            }
+
+                            // If on account.premierleague.com login screen, auto-fill email & password
+                            if (safeUrl.contains("account.premierleague.com")) {
+                                val escapedEmail = prefillEmail.replace("'", "\\'")
+                                val escapedPass = prefillPassword.replace("'", "\\'")
+                                if (escapedEmail.isNotBlank() && escapedPass.isNotBlank()) {
+                                    val autoFillJs = """
+                                        (function() {
+                                            var u = document.querySelector('input[type="email"], input[name="username"], input[id*="username"], input[name="login"]');
+                                            var p = document.querySelector('input[type="password"], input[name="password"], input[id*="password"]');
+                                            if (u && !u.value) {
+                                                u.value = '$escapedEmail';
+                                                u.dispatchEvent(new Event('input', { bubbles: true }));
+                                                u.dispatchEvent(new Event('change', { bubbles: true }));
+                                            }
+                                            if (p && !p.value) {
+                                                p.value = '$escapedPass';
+                                                p.dispatchEvent(new Event('input', { bubbles: true }));
+                                                p.dispatchEvent(new Event('change', { bubbles: true }));
+                                            }
+                                        })();
+                                    """.trimIndent()
+                                    view?.evaluateJavascript(autoFillJs, null)
+                                }
+                            }
+
+                            // When redirected back to fantasy.premierleague.com, check localStorage for OIDC token
+                            if (safeUrl.contains("fantasy.premierleague.com") && !authCompleted) {
+                                val tokenExtractJs = """
+                                    (function() {
+                                        for (var i = 0; i < localStorage.length; i++) {
+                                            var k = localStorage.key(i);
+                                            if (k && k.indexOf('oidc.user:https://account.premierleague.com/as') === 0) {
+                                                try {
+                                                    var obj = JSON.parse(localStorage.getItem(k));
+                                                    if (obj && obj.access_token) return obj.access_token;
+                                                } catch(e) {}
+                                            }
+                                        }
+                                        // If not logged in yet, auto-click the Log In button on FPL homepage
+                                        var loginBtn = document.querySelector('a[href*="account.premierleague.com"], button[data-testid*="login"], a[href*="login"]');
+                                        if (loginBtn) loginBtn.click();
+                                        return "";
+                                    })();
+                                """.trimIndent()
+
+                                view?.evaluateJavascript(tokenExtractJs) { result ->
+                                    val cleaned = result?.trim()?.removeSurrounding("\"") ?: ""
+                                    if (cleaned.length > 20 && cleaned != "null" && !authCompleted) {
+                                        authCompleted = true
+                                        onAuthSuccess(cleaned)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    loadUrl("https://fantasy.premierleague.com/")
+                }
+            }
+        )
     }
 }
 
@@ -846,7 +1053,7 @@ fun AuthInputBox(
 }
 
 // =========================================================================
-// HOME TAB DASHBOARD (FIXED STAT WRAPPING + REAL PLAYER FACES ON PITCH)
+// HOME TAB DASHBOARD
 // =========================================================================
 
 @Composable
@@ -867,7 +1074,6 @@ fun HomeDashboardScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
-        // 1. Hero Banner
         item {
             Box(
                 modifier = Modifier
@@ -933,7 +1139,6 @@ fun HomeDashboardScreen(
             }
         }
 
-        // 2. 4-Column Summary Stats Strip (Evenly weighted — no wrapping!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -977,7 +1182,6 @@ fun HomeDashboardScreen(
             }
         }
 
-        // 3. Split Row: Left Mini-Pitch ("My Team") + Right 3 Stacked Cards
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1043,7 +1247,6 @@ fun HomeDashboardScreen(
                     }
                 }
 
-                // Right Column: Your League, Transfers, Next Fixture
                 Column(
                     modifier = Modifier.weight(0.95f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -1088,7 +1291,7 @@ fun HomeDashboardScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "of 8,952,110",
+                                text = "of 11,240,000",
                                 fontSize = 10.sp,
                                 color = FplTextSecondary
                             )
@@ -1204,7 +1407,6 @@ fun HomeDashboardScreen(
             }
         }
 
-        // 4. Upcoming Fixtures
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -1392,7 +1594,7 @@ fun VerticalStatDivider() {
 }
 
 // =========================================================================
-// MY TEAM TAB (REAL PLAYER FACES ON PITCH & BENCH + FIXED TEAM VALUE TEXT)
+// MY TEAM TAB (2026/27 PLAYER FACES ON PITCH & BENCH)
 // =========================================================================
 
 @Composable
@@ -1413,7 +1615,6 @@ fun MyTeamPitchScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
-        // Sub-header row
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1422,7 +1623,7 @@ fun MyTeamPitchScreen(
             ) {
                 Column {
                     Text(
-                        text = "My Team",
+                        text = state.managerEntry?.teamName ?: "My Team",
                         fontSize = 24.sp,
                         fontWeight = FontWeight.ExtraBold
                     )
@@ -1450,7 +1651,6 @@ fun MyTeamPitchScreen(
             }
         }
 
-        // Fixed 4-Column Stats Summary Card (No text wrapping on Team Value!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -1532,7 +1732,6 @@ fun MyTeamPitchScreen(
             }
         }
 
-        // Pitch View / List View Container Card
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp)) {
@@ -1641,7 +1840,6 @@ fun MyTeamPitchScreen(
             }
         }
 
-        // Substitutes Card (with Real Player Faces!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -1700,7 +1898,6 @@ fun MyTeamPitchScreen(
             }
         }
 
-        // Bottom Make Transfers Outlined Button
         item {
             OutlinedButton(
                 onClick = onNavigateToTransfers,
@@ -1976,7 +2173,7 @@ fun PitchFormationRow(
 }
 
 // =========================================================================
-// INTERACTIVE TRANSFERS TAB (SQUAD SELECTOR, REAL FACES, LIVE BUDGET)
+// INTERACTIVE TRANSFERS TAB
 // =========================================================================
 
 @Composable
@@ -2005,7 +2202,6 @@ fun TransfersMarketScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
-        // Header Row
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2035,7 +2231,6 @@ fun TransfersMarketScreen(
             }
         }
 
-        // Fixed 4-Column Budget & Team Value Strip (No text wrapping!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -2079,7 +2274,6 @@ fun TransfersMarketScreen(
             }
         }
 
-        // Interactive Make Transfers Card
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -2093,13 +2287,12 @@ fun TransfersMarketScreen(
                     ) {
                         Text("Make Transfers", fontSize = 17.sp, fontWeight = FontWeight.Bold)
                         Text(
-                            text = "Step 1: Tap squad player OUT • Step 2: Tap replacement IN",
+                            text = "Tap squad OUT ➔ Tap market IN",
                             fontSize = 10.sp,
                             color = FplTextSecondary
                         )
                     }
 
-                    // Interactive Horizontal Strip of User's 15 Squad Players
                     Text(
                         text = "Your Current Squad (Tap any player to transfer OUT):",
                         fontSize = 11.sp,
@@ -2155,13 +2348,11 @@ fun TransfersMarketScreen(
                         }
                     }
 
-                    // Side-by-Side Out / In Cards (Clean layout with Real Faces)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // OUT Card
                         Card(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
@@ -2230,7 +2421,6 @@ fun TransfersMarketScreen(
                             modifier = Modifier.size(20.dp)
                         )
 
-                        // IN Card
                         Card(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
@@ -2320,7 +2510,6 @@ fun TransfersMarketScreen(
             }
         }
 
-        // Sub-Tabs (All Players | Watchlist | My Squad) + Fixed Search Pill (No vertical clipping!)
         item {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -2358,7 +2547,6 @@ fun TransfersMarketScreen(
                     }
                 }
 
-                // Clean custom search bar so placeholder text is never cut off
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -2410,7 +2598,6 @@ fun TransfersMarketScreen(
             }
         }
 
-        // Position Filter Pills (All, GK, DEF, MID, FWD)
         item {
             val posList = listOf(null to "All", 1 to "GK", 2 to "DEF", 3 to "MID", 4 to "FWD")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2435,7 +2622,6 @@ fun TransfersMarketScreen(
             }
         }
 
-        // 4 Grouped Position Sections
         val sections = listOf(
             Triple(4, "Forwards", Color(0xFF10B981)),
             Triple(3, "Midfielders", Color(0xFF38BDF8)),
@@ -2544,7 +2730,6 @@ fun TransferPositionSectionCard(
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Player column (+ or - button, Real Face Photo, Name)
                     Row(
                         modifier = Modifier.weight(1.9f),
                         verticalAlignment = Alignment.CenterVertically,
@@ -2594,7 +2779,6 @@ fun TransferPositionSectionCard(
                         }
                     }
 
-                    // Team column
                     Row(
                         modifier = Modifier.weight(0.75f),
                         verticalAlignment = Alignment.CenterVertically,
@@ -2604,7 +2788,6 @@ fun TransferPositionSectionCard(
                         Text(teamShort, fontSize = 11.sp, color = Color.White.copy(alpha = 0.9f))
                     }
 
-                    // Price column
                     Text(
                         text = player.formattedPrice,
                         fontSize = 12.sp,
@@ -2612,7 +2795,6 @@ fun TransferPositionSectionCard(
                         modifier = Modifier.weight(0.7f)
                     )
 
-                    // Points pill column
                     Box(modifier = Modifier.weight(0.6f)) {
                         Box(
                             modifier = Modifier
@@ -2629,7 +2811,6 @@ fun TransferPositionSectionCard(
                         }
                     }
 
-                    // Watchlist Star + Profile Info Button
                     Row(
                         modifier = Modifier.weight(0.55f),
                         horizontalArrangement = Arrangement.End,
@@ -3085,7 +3266,7 @@ fun CupMiniCard(
 }
 
 // =========================================================================
-// MORE TAB & PROFILE DIALOG (NO TEAM ID INPUT)
+// MORE TAB & PROFILE DIALOG
 // =========================================================================
 
 @Composable
