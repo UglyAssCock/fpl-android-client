@@ -61,11 +61,19 @@ data class PlayerDto(
             else -> "UNK"
         }
 
-    val photoUrl: String
-        get() {
-            val cleanCode = if (code != 0) code.toString() else photo.substringBefore(".")
-            return "https://resources.premierleague.com/premierleague/photos/players/110x140/p$cleanCode.png"
+    val cleanPhotoCode: String
+        get() = if (code != 0) {
+            code.toString()
+        } else {
+            photo.substringBefore(".").removePrefix("p")
         }
+
+    // Current season 2026/27 Premier League CDN photo (no 'p' prefix)
+    val photoUrl: String
+        get() = "https://resources.premierleague.com/premierleague25/photos/players/110x140/$cleanPhotoCode.png"
+
+    val highResPhotoUrl: String
+        get() = "https://resources.premierleague.com/premierleague25/photos/players/250x250/$cleanPhotoCode.png"
 }
 
 data class ElementSummaryResponse(
@@ -95,7 +103,6 @@ data class FixtureDto(
     @SerializedName("finished") val finished: Boolean?
 )
 
-// Manager Entry + Leagues + Cups
 data class ManagerEntryDto(
     @SerializedName("id") val id: Int,
     @SerializedName("name") val teamName: String,
@@ -151,7 +158,6 @@ data class CupMatchDto(
     @SerializedName("winner") val winner: Int?
 )
 
-// Classic League Standings
 data class LeagueStandingsResponse(
     @SerializedName("league") val league: LeagueMetaDto,
     @SerializedName("standings") val standings: StandingsPageDto
@@ -178,7 +184,6 @@ data class StandingResultDto(
     @SerializedName("total") val total: Int
 )
 
-// Squad Picks
 data class ManagerPicksResponse(
     @SerializedName("entry_history") val entryHistory: EntryHistoryDto,
     @SerializedName("picks") val picks: List<PickDto> = emptyList()
@@ -204,7 +209,6 @@ data class PickDto(
     @SerializedName("is_vice_captain") val isViceCaptain: Boolean
 )
 
-// Login & Authenticated User Endpoint (/api/me/)
 data class MeResponse(
     @SerializedName("player") val player: MePlayerDto?
 )
@@ -216,7 +220,6 @@ data class MePlayerDto(
     @SerializedName("email") val email: String?
 )
 
-// Transfers Models
 data class PlannedTransfer(
     val playerOut: PlayerDto,
     val playerIn: PlayerDto
@@ -226,7 +229,7 @@ data class TransferRequestPayload(
     @SerializedName("confirmed") val confirmed: Boolean = false,
     @SerializedName("entry") val entry: Int,
     @SerializedName("event") val event: Int,
-    @SerializedName(" transfers") val transfers: List<TransferItemPayload>,
+    @SerializedName("transfers") val transfers: List<TransferItemPayload>,
     @SerializedName("wildcard") val wildcard: Boolean = false,
     @SerializedName("freehit") val freehit: Boolean = false
 )
