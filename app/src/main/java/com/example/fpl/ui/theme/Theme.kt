@@ -2,34 +2,36 @@ package com.example.fpl.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-private val FplDarkColors = darkColorScheme(
-    primary = Color(0xFF00FF87),
-    onPrimary = Color(0xFF37003C),
-    primaryContainer = Color(0xFF37003C),
-    onPrimaryContainer = Color(0xFF00FF87),
-    secondary = Color(0xFF05F0FF),
-    onSecondary = Color(0xFF002B36),
-    background = Color(0xFF120916),
-    surface = Color(0xFF1E1224),
-    onBackground = Color(0xFFF5F2F7),
-    onSurface = Color(0xFFF5F2F7)
-)
+val FplBgNavy = Color(0xFF070A21)
+val FplCardNavy = Color(0xFF10163A)
+val FplCardNavyLight = Color(0xFF161E4A)
+val FplCardBorder = Color(0xFF252F66)
+val FplElectricPurple = Color(0xFF6C38FF)
+val FplBrightPurple = Color(0xFF8B5CF6)
+val FplAccentGreen = Color(0xFF00E676)
+val FplOutCrimson = Color(0xFFE11D48)
+val FplTextSecondary = Color(0xFF94A3B8)
 
-private val FplLightColors = lightColorScheme(
-    primary = Color(0xFF37003C),
+private val FplExactDarkColorScheme = darkColorScheme(
+    primary = FplElectricPurple,
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFEADDFF),
-    onPrimaryContainer = Color(0xFF37003C),
-    secondary = Color(0xFF00885A),
-    onSecondary = Color.White,
-    background = Color(0xFFF8F7FA),
-    surface = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F)
+    primaryContainer = Color(0xFF281B68),
+    onPrimaryContainer = Color.White,
+    secondary = FplAccentGreen,
+    onSecondary = Color(0xFF052E16),
+    secondaryContainer = Color(0xFF161E4A),
+    onSecondaryContainer = Color.White,
+    background = FplBgNavy,
+    surface = FplCardNavy,
+    surfaceVariant = FplCardNavyLight,
+    onBackground = Color.White,
+    onSurface = Color.White,
+    onSurfaceVariant = FplTextSecondary,
+    error = FplOutCrimson,
+    onError = Color.White
 )
 
 @Composable
@@ -37,9 +39,8 @@ fun FplTheme(
     darkTheme: Boolean = true,
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) FplDarkColors else FplLightColors
     MaterialTheme(
-        colorScheme = colorScheme,
+        colorScheme = FplExactDarkColorScheme,
         content = content
     )
 }
