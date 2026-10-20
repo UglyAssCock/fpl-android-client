@@ -39,7 +39,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.fpl.ui.screens.EditProfileAndTeamIdDialog
+import com.example.fpl.ui.screens.EditProfileDialog
 import com.example.fpl.ui.screens.FixturesScreen
 import com.example.fpl.ui.screens.FplFullAuthScreen
 import com.example.fpl.ui.screens.HomeDashboardScreen
@@ -77,25 +77,32 @@ fun FplApp(viewModel: FplViewModel) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: "home"
 
-    // Full-screen Log In / Sign Up Screen (Screenshot 6)
-    if (state.showAuthScreen) {
+    // Full-screen Log In / Sign Up Screen (No Team ID login)
+    if (state.showAuthScreen || !state.isLoggedIn) {
         FplFullAuthScreen(
             state = state,
             onSelectSignUpMode = viewModel::setSignUpMode,
-            onSubmitAuth = { email, password, teamId, fullName ->
-                viewModel.login(email, password, teamId, fullName)
+            onLogin = { email, password ->
+                viewModel.login(email, password)
             },
-            onClose = { viewModel.openAuthScreen(false) }
+            onSignUp = { fullName, email, password, confirmPassword ->
+                viewModel.signUp(fullName, email, password, confirmPassword)
+            },
+            onClose = if (state.isLoggedIn) {
+                { viewModel.openAuthScreen(false) }
+            } else {
+                null
+            }
         )
         return
     }
 
     if (state.showEditProfileDialog) {
-        EditProfileAndTeamIdDialog(
+        EditProfileDialog(
             state = state,
             onDismiss = { viewModel.openEditProfileDialog(false) },
-            onSave = { handle, teamId ->
-                viewModel.saveProfileAndTeamId(handle, teamId)
+            onSave = { handle ->
+                viewModel.saveProfileHandle(handle)
             }
         )
     }
@@ -105,7 +112,7 @@ fun FplApp(viewModel: FplViewModel) {
         topBar = {
             TopBrandHeader(
                 onNotificationClick = { viewModel.loadBootstrapData() },
-                onProfileClick = { viewModel.openAuthScreen(true) }
+                onProfileClick = { viewModel.openEditProfileDialog(true) }
             )
         },
         bottomBar = {
@@ -241,7 +248,6 @@ fun FplApp(viewModel: FplViewModel) {
                                 state = state,
                                 onTogglePitchView = viewModel::setPitchView,
                                 onNavigateToTransfers = { navController.navigate("transfers") },
-                                onOpenTeamIdDialog = { viewModel.openEditProfileDialog(true) },
                                 onPlayerClick = { playerId ->
                                     viewModel.loadPlayerDetails(playerId)
                                     navController.navigate("player_detail/$playerId")
@@ -254,8 +260,11 @@ fun FplApp(viewModel: FplViewModel) {
                                 onSelectSubTab = viewModel::setTransferSubTab,
                                 onSelectPosFilter = viewModel::setTransferPositionFilter,
                                 onSearchChange = viewModel::updateTransferSearchQuery,
+                                onSelectPlayerOut = viewModel::selectPlayerForTransferOut,
                                 onSelectPlayerIn = viewModel::selectPendingPlayerIn,
+                                onToggleWatchlist = viewModel::toggleWatchlist,
                                 onConfirmTransfers = viewModel::confirmCurrentTransferPair,
+                                onResetTransfers = viewModel::resetTransfers,
                                 onPlayerClick = { playerId ->
                                     viewModel.loadPlayerDetails(playerId)
                                     navController.navigate("player_detail/$playerId")
