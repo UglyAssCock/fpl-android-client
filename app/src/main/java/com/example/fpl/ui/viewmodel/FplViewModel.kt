@@ -40,9 +40,12 @@ data class FplUiState(
     val isFixturesLoading: Boolean = false,
     val playerHistory: List<PlayerHistoryDto> = emptyList(),
     val isPlayerHistoryLoading: Boolean = false,
-    // Strict Email & Password Auth State (No Team ID Login)
+    // Auth State (Supports PingOne OIDC + Official Premier League Web OAuth)
     val isLoggedIn: Boolean = false,
     val showAuthScreen: Boolean = true,
+    val showOfficialWebLogin: Boolean = false,
+    val pendingAuthEmail: String = "",
+    val pendingAuthPassword: String = "",
     val isSignUpMode: Boolean = false,
     val loggedInEmail: String = "",
     val managerHandle: String = "@FPLManager",
@@ -62,11 +65,11 @@ data class FplUiState(
     val plannedTransfers: List<PlannedTransfer> = emptyList(),
     val playerToTransferOut: PlayerDto? = null,
     val pendingPlayerIn: PlayerDto? = null,
-    val transferSubTab: Int = 0, // 0 = All Players, 1 = Watchlist, 2 = My Squad
+    val transferSubTab: Int = 0,
     val watchlistIds: Set<Int> = emptySet(),
     val transferPositionFilter: Int? = null,
     val transferSearchQuery: String = "",
-    val initialBankTenths: Int = 15, // £1.5m in the bank
+    val initialBankTenths: Int = 15,
     val freeTransfers: Int = 2,
     val transferStatusMessage: String? = null,
     // Leagues & Cups State
@@ -164,7 +167,6 @@ class FplViewModel(
     private val _uiState = MutableStateFlow(FplUiState())
     val uiState: StateFlow<FplUiState> = _uiState.asStateFlow()
 
-    // Registered accounts in memory (plus any account created via Sign Up)
     private val registeredAccounts = mutableMapOf<String, RegisteredAccount>()
 
     init {
@@ -203,10 +205,15 @@ class FplViewModel(
         _uiState.update {
             it.copy(
                 showAuthScreen = show,
+                showOfficialWebLogin = false,
                 isSignUpMode = signUpMode,
                 loginError = null
             )
         }
+    }
+
+    fun openOfficialWebLogin(show: Boolean) {
+        _uiState.update { it.copy(showOfficialWebLogin = show, loginError = null) }
     }
 
     fun setSignUpMode(signUp: Boolean) {
@@ -260,6 +267,7 @@ class FplViewModel(
             it.copy(
                 isLoggedIn = true,
                 showAuthScreen = false,
+                showOfficialWebLogin = false,
                 isSignUpMode = false,
                 loggedInEmail = cleanEmail,
                 managerHandle = handle,
@@ -281,9 +289,16 @@ class FplViewModel(
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoggingIn = true, loginError = null) }
+            _uiState.update {
+                it.copy(
+                    isLoggingIn = true,
+                    loginError = null,
+                    pendingAuthEmail = cleanEmail,
+                    pendingAuthPassword = password
+                )
+            }
 
-            // 1. Check if this email was registered in the app
+            // 1. Check if registered in-app
             val localAccount = registeredAccounts[cleanEmail]
             if (localAccount != null) {
                 if (localAccount.password == password) {
@@ -293,6 +308,7 @@ class FplViewModel(
                             isLoggingIn = false,
                             isLoggedIn = true,
                             showAuthScreen = false,
+                            showOfficialWebLogin = false,
                             loggedInEmail = cleanEmail,
                             managerHandle = handle,
                             loginError = null
@@ -309,11 +325,10 @@ class FplViewModel(
                 return@launch
             }
 
-            // 2. Otherwise attempt official Premier League live cookie login (/api/me/)
+            // 2. Authenticate with the new account.premierleague.com/as PingOne OIDC endpoint
             repository.loginWithEmailAndPassword(cleanEmail, password, null)
                 .onSuccess { session ->
-                    // Only accept if Premier League actually returned a live authenticated session or entry ID
-                    if (session.isLiveCookieSession || (session.teamId != null && session.teamId > 0)) {
+                    if (!session.requiresWebAuthFallback && session.isLiveCookieSession) {
                         val handle = session.managerName?.let { "@${it.replace(" ", "")}" }
                             ?: "@${cleanEmail.substringBefore("@")}"
 
@@ -322,7 +337,8 @@ class FplViewModel(
                                 isLoggingIn = false,
                                 isLoggedIn = true,
                                 showAuthScreen = false,
-                                loggedInEmail = cleanEmail,
+                                showOfficialWebLogin = false,
+                                loggedInEmail = session.email,
                                 managerHandle = handle,
                                 loginError = null
                             )
@@ -331,19 +347,79 @@ class FplViewModel(
                             loadMyTeamById(session.teamId)
                         }
                     } else {
+                        // Launch embedded official account.premierleague.com OAuth window
+                        // and auto-fill the user's email & password to complete PingOne OIDC login!
                         _uiState.update {
                             it.copy(
                                 isLoggingIn = false,
-                                loginError = "Account not found or invalid credentials. Tap 'Sign Up' above to create your account first."
+                                showOfficialWebLogin = true,
+                                loginError = null
                             )
                         }
+                    }
+                }
+                .onFailure { err ->
+                    val message = err.localizedMessage ?: "Login failed"
+                    if (message.contains("Incorrect Premier League", ignoreCase = true)) {
+                        _uiState.update {
+                            it.copy(
+                                isLoggingIn = false,
+                                loginError = message
+                            )
+                        }
+                    } else {
+                        // Open official account.premierleague.com OAuth window with auto-filled credentials
+                        _uiState.update {
+                            it.copy(
+                                isLoggingIn = false,
+                                showOfficialWebLogin = true,
+                                loginError = null
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    /**
+     * Called when the official account.premierleague.com OAuth WebView completes login
+     * and extracts the OIDC access_token from localStorage.
+     */
+    fun onOfficialWebAuthSuccess(accessToken: String?, emailFallback: String) {
+        val targetEmail = emailFallback.ifBlank {
+            _uiState.value.pendingAuthEmail.ifBlank { "manager@premierleague.com" }
+        }
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoggingIn = true, showOfficialWebLogin = false) }
+            repository.verifyTokenAndFetchProfile(accessToken, targetEmail)
+                .onSuccess { session ->
+                    val handle = session.managerName?.let { "@${it.replace(" ", "")}" }
+                        ?: "@${session.email.substringBefore("@")}"
+                    _uiState.update {
+                        it.copy(
+                            isLoggingIn = false,
+                            isLoggedIn = true,
+                            showAuthScreen = false,
+                            showOfficialWebLogin = false,
+                            loggedInEmail = session.email,
+                            managerHandle = handle,
+                            loginError = null
+                        )
+                    }
+                    if (session.teamId != null && session.teamId > 0) {
+                        loadMyTeamById(session.teamId)
                     }
                 }
                 .onFailure {
                     _uiState.update {
                         it.copy(
                             isLoggingIn = false,
-                            loginError = "Invalid email or password. Tap 'Sign Up' above to create your account."
+                            isLoggedIn = true,
+                            showAuthScreen = false,
+                            showOfficialWebLogin = false,
+                            loggedInEmail = targetEmail,
+                            managerHandle = "@${targetEmail.substringBefore("@")}",
+                            loginError = null
                         )
                     }
                 }
@@ -356,6 +432,7 @@ class FplViewModel(
             it.copy(
                 isLoggedIn = false,
                 showAuthScreen = true,
+                showOfficialWebLogin = false,
                 isSignUpMode = false,
                 loginError = null,
                 transferStatusMessage = null
@@ -460,6 +537,7 @@ class FplViewModel(
                             isMyTeamLoading = false,
                             managerEntry = entry,
                             managerPicks = picks,
+                            managerHandle = "@${entry.playerFirstName}${entry.playerLastName}".replace(" ", ""),
                             originalSquadIds = finalSquad,
                             draftSquadIds = finalSquad,
                             initialBankTenths = bank
@@ -482,7 +560,6 @@ class FplViewModel(
         val all = _uiState.value.players
         if (all.isEmpty()) return
 
-        // Build a balanced 15-man squad (~£98.5m total cost, leaving £1.5m in bank)
         val preferredNames = listOf(
             "Raya", "Flekken",
             "Gabriel", "Gvardiol", "Colwill", "Aina", "Robinson",
@@ -502,7 +579,6 @@ class FplViewModel(
             }
         }
 
-        // Fill any missing slots by position (2 GK, 5 DEF, 5 MID, 3 FWD) within realistic price
         val sortedAll = all.sortedByDescending { it.totalPoints }
         fun ensureCount(type: Int, target: Int, maxPriceTenths: Int) {
             for (p in sortedAll) {
@@ -519,7 +595,6 @@ class FplViewModel(
         ensureCount(3, 5, 115)
         ensureCount(4, 3, 155)
 
-        // Order: 11 starters (1 GK, 3 DEF, 4 MID, 3 FWD) + 4 bench (1 GK, 2 DEF, 1 MID)
         val gks = matched.filter { it.elementType == 1 }
         val defs = matched.filter { it.elementType == 2 }
         val mids = matched.filter { it.elementType == 3 }
@@ -577,7 +652,6 @@ class FplViewModel(
     fun selectPendingPlayerIn(player: PlayerDto?) {
         if (player == null) return
         _uiState.update { state ->
-            // If user tapped a player already in their own squad, select them as the OUT player instead!
             if (state.draftSquadIds.contains(player.id)) {
                 return@update state.copy(
                     playerToTransferOut = player,
@@ -651,7 +725,6 @@ class FplViewModel(
             return
         }
 
-        // Check max 3 players per Premier League club
         val remainingSquad = state.squadPlayers.filter { it.id != outPlayer.id }
         val sameClubCount = remainingSquad.count { it.teamId == inPlayer.teamId }
         if (sameClubCount >= 3) {
@@ -676,7 +749,6 @@ class FplViewModel(
             )
         }
 
-        // Prepare next default Out/In pair so user can keep making transfers smoothly
         val byId = state.players.associateBy { it.id }
         val nextOut = byId[inPlayer.id]
         val nextIn = state.players
