@@ -77,7 +77,6 @@ fun FplApp(viewModel: FplViewModel) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: "home"
 
-    // Full-screen Log In / Sign Up Screen (No Team ID login)
     if (state.showAuthScreen || !state.isLoggedIn) {
         FplFullAuthScreen(
             state = state,
@@ -87,6 +86,10 @@ fun FplApp(viewModel: FplViewModel) {
             },
             onSignUp = { fullName, email, password, confirmPassword ->
                 viewModel.signUp(fullName, email, password, confirmPassword)
+            },
+            onOpenOfficialWebLogin = viewModel::openOfficialWebLogin,
+            onOfficialWebAuthSuccess = { token, email ->
+                viewModel.onOfficialWebAuthSuccess(token, email)
             },
             onClose = if (state.isLoggedIn) {
                 { viewModel.openAuthScreen(false) }
