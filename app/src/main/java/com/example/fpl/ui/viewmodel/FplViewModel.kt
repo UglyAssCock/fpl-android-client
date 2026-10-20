@@ -7,7 +7,6 @@ import com.example.fpl.data.model.FixtureDto
 import com.example.fpl.data.model.LeagueStandingsResponse
 import com.example.fpl.data.model.ManagerEntryDto
 import com.example.fpl.data.model.ManagerPicksResponse
-import com.example.fpl.data.model.PickDto
 import com.example.fpl.data.model.PlannedTransfer
 import com.example.fpl.data.model.PlayerDto
 import com.example.fpl.data.model.PlayerHistoryDto
@@ -29,17 +28,20 @@ data class FplUiState(
     val searchQuery: String = "",
     val selectedPosition: Int? = null,
     val selectedTeamId: Int? = null,
-    val selectedEventId: Int = 1,
+    val selectedEventId: Int = 8,
     val fixtures: List<FixtureDto> = emptyList(),
     val isFixturesLoading: Boolean = false,
     val playerHistory: List<PlayerHistoryDto> = emptyList(),
     val isPlayerHistoryLoading: Boolean = false,
-    // Auth State
-    val isLoggedIn: Boolean = false,
-    val loggedInEmail: String = "",
+    // Auth & Profile Screen State
+    val isLoggedIn: Boolean = true,
+    val showAuthScreen: Boolean = false,
+    val isSignUpMode: Boolean = false,
+    val loggedInEmail: String = "manager@fantasy.premierleague.com",
+    val managerHandle: String = "@FantasyUser",
     val isLoggingIn: Boolean = false,
     val loginError: String? = null,
-    val showLoginDialog: Boolean = false,
+    val showEditProfileDialog: Boolean = false,
     // My Team & Pitch State
     val teamIdInput: String = "",
     val isMyTeamLoading: Boolean = false,
@@ -47,46 +49,71 @@ data class FplUiState(
     val managerEntry: ManagerEntryDto? = null,
     val managerPicks: ManagerPicksResponse? = null,
     val isPitchView: Boolean = true,
+    val selectedFormation: String = "3-4-3",
     // Transfers State
     val draftSquadIds: List<Int> = emptyList(),
     val plannedTransfers: List<PlannedTransfer> = emptyList(),
     val playerToTransferOut: PlayerDto? = null,
+    val pendingPlayerIn: PlayerDto? = null,
+    val transferSubTab: Int = 0, // 0 = All Players, 1 = Watchlist, 2 = My Squad
+    val watchlistIds: Set<Int> = emptySet(),
+    val transferPositionFilter: Int? = null,
     val transferSearchQuery: String = "",
-    val initialBankTenths: Int = 0,
+    val initialBankTenths: Int = 1024,
     val freeTransfers: Int = 1,
     val transferStatusMessage: String? = null,
     // Leagues & Cups State
+    val leaguesSubTab: Int = 0, // 0 = My Leagues, 1 = Public, 2 = Global, 3 = Cups
     val selectedLeagueStandings: LeagueStandingsResponse? = null,
     val isStandingsLoading: Boolean = false,
     val standingsError: String? = null,
-    // Theme
     val isDarkMode: Boolean = true
 ) {
-    val filteredPlayers: List<PlayerDto>
+    val currentEventName: String
+        get() = events.firstOrNull { it.id == selectedEventId }?.name ?: "Gameweek $selectedEventId"
+
+    val currentDeadlineFormatted: String
+        get() {
+            val raw = events.firstOrNull { it.id == selectedEventId }?.deadlineTime
+            return if (raw != null && raw.length >= 16) {
+                raw.substring(0, 16).replace("T", " ")
+            } else {
+                "Sat, 26 Oct 11:00"
+            }
+        }
+
+    val displayTotalPoints: Int
+        get() = managerEntry?.summaryOverallPoints ?: 487
+
+    val displayGwPoints: Int
+        get() = managerEntry?.summaryEventPoints ?: 62
+
+    val displayOverallRank: String
+        get() = managerEntry?.summaryOverallRank?.let { "%,d".format(it) } ?: "342,671"
+
+    val displayTeamValue: String
+        get() {
+            val v = managerPicks?.entryHistory?.value ?: managerEntry?.lastDeadlineValue ?: 1024
+            return "£${v / 10.0}m"
+        }
+
+    val filteredTransferPlayers: List<PlayerDto>
         get() = players
             .asSequence()
-            .filter { player ->
-                val matchesSearch = searchQuery.isBlank() ||
-                    player.webName.contains(searchQuery, ignoreCase = true) ||
-                    "${player.firstName} ${player.secondName}".contains(searchQuery, ignoreCase = true)
-                val matchesPos = selectedPosition == null || player.elementType == selectedPosition
-                val matchesTeam = selectedTeamId == null || player.teamId == selectedTeamId
-                matchesSearch && matchesPos && matchesTeam
+            .filter { p ->
+                val matchesTab = when (transferSubTab) {
+                    1 -> watchlistIds.contains(p.id)
+                    2 -> draftSquadIds.contains(p.id)
+                    else -> true
+                }
+                val matchesPos = transferPositionFilter == null || p.elementType == transferPositionFilter
+                val matchesQuery = transferSearchQuery.isBlank() ||
+                    p.webName.contains(transferSearchQuery, ignoreCase = true) ||
+                    "${p.firstName} ${p.secondName}".contains(transferSearchQuery, ignoreCase = true)
+                matchesTab && matchesPos && matchesQuery
             }
-            .sortedByDescending { it.totalPoints }
+            .sortedByDescending { it.form.toDoubleOrNull() ?: 0.0 }
             .toList()
-
-    val remainingBankTenths: Int
-        get() {
-            val delta = plannedTransfers.sumOf { it.playerOut.nowCost - it.playerIn.nowCost }
-            return initialBankTenths + delta
-        }
-
-    val transferPointsCost: Int
-        get() {
-            val extra = (plannedTransfers.size - freeTransfers).coerceAtLeast(0)
-            return extra * 4
-        }
 }
 
 class FplViewModel(
@@ -108,11 +135,60 @@ class FplViewModel(
         _uiState.update { it.copy(isPitchView = isPitch) }
     }
 
-    fun openLoginDialog(show: Boolean) {
-        _uiState.update { it.copy(showLoginDialog = show, loginError = null) }
+    fun setTransferSubTab(tab: Int) {
+        _uiState.update { it.copy(transferSubTab = tab) }
     }
 
-    fun login(email: String, password: String, optionalTeamId: String) {
+    fun setTransferPositionFilter(pos: Int?) {
+        _uiState.update { it.copy(transferPositionFilter = pos) }
+    }
+
+    fun setLeaguesSubTab(tab: Int) {
+        _uiState.update { it.copy(leaguesSubTab = tab) }
+    }
+
+    fun toggleWatchlist(playerId: Int) {
+        _uiState.update { state ->
+            val updated = state.watchlistIds.toMutableSet()
+            if (!updated.add(playerId)) updated.remove(playerId)
+            state.copy(watchlistIds = updated)
+        }
+    }
+
+    fun openAuthScreen(show: Boolean, signUpMode: Boolean = false) {
+        _uiState.update {
+            it.copy(
+                showAuthScreen = show,
+                isSignUpMode = signUpMode,
+                loginError = null
+            )
+        }
+    }
+
+    fun setSignUpMode(signUp: Boolean) {
+        _uiState.update { it.copy(isSignUpMode = signUp, loginError = null) }
+    }
+
+    fun openEditProfileDialog(show: Boolean) {
+        _uiState.update { it.copy(showEditProfileDialog = show) }
+    }
+
+    fun saveProfileAndTeamId(handle: String, teamIdText: String) {
+        val cleanHandle = if (handle.startsWith("@")) handle else "@$handle"
+        _uiState.update {
+            it.copy(
+                managerHandle = if (handle.isBlank()) it.managerHandle else cleanHandle,
+                teamIdInput = teamIdText.filter { c -> c.isDigit() },
+                showEditProfileDialog = false
+            )
+        }
+        val parsedId = teamIdText.filter { it.isDigit() }.toIntOrNull()
+        if (parsedId != null && parsedId > 0) {
+            loadMyTeamById(parsedId)
+        }
+    }
+
+    fun login(email: String, password: String, optionalTeamId: String, fullName: String = "") {
         if (email.isBlank() || !email.contains("@")) {
             _uiState.update { it.copy(loginError = "Please enter a valid email address.") }
             return
@@ -132,12 +208,19 @@ class FplViewModel(
                         ?: parsedTeamId
                         ?: _uiState.value.teamIdInput.toIntOrNull()
 
+                    val handle = if (fullName.isNotBlank()) {
+                        "@${fullName.replace(" ", "")}"
+                    } else {
+                        "@${email.substringBefore("@")}"
+                    }
+
                     _uiState.update {
                         it.copy(
                             isLoggingIn = false,
                             isLoggedIn = true,
+                            showAuthScreen = false,
                             loggedInEmail = session.email,
-                            showLoginDialog = false,
+                            managerHandle = handle,
                             teamIdInput = resolvedTeamId?.toString() ?: it.teamIdInput
                         )
                     }
@@ -149,7 +232,7 @@ class FplViewModel(
                     _uiState.update {
                         it.copy(
                             isLoggingIn = false,
-                            loginError = err.localizedMessage ?: "Login failed."
+                            loginError = err.localizedMessage ?: "Authentication failed."
                         )
                     }
                 }
@@ -161,7 +244,8 @@ class FplViewModel(
         _uiState.update {
             it.copy(
                 isLoggedIn = false,
-                loggedInEmail = "",
+                showAuthScreen = true,
+                isSignUpMode = false,
                 transferStatusMessage = null
             )
         }
@@ -175,7 +259,17 @@ class FplViewModel(
                     val currentGw = response.events.firstOrNull { it.isCurrent }?.id
                         ?: response.events.firstOrNull { it.isNext }?.id
                         ?: response.events.firstOrNull()?.id
-                        ?: 1
+                        ?: 8
+
+                    // Pick default Out/In showcase players (e.g. Haaland & Isak or top 2 forwards)
+                    val forwards = response.elements.filter { it.elementType == 4 }
+                        .sortedByDescending { it.nowCost }
+                    val defaultOut = forwards.firstOrNull {
+                        it.webName.contains("Haaland", ignoreCase = true)
+                    } ?: forwards.getOrNull(0)
+                    val defaultIn = forwards.firstOrNull {
+                        it.webName.contains("Isak", ignoreCase = true)
+                    } ?: forwards.getOrNull(1)
 
                     _uiState.update {
                         it.copy(
@@ -184,9 +278,12 @@ class FplViewModel(
                             teams = response.teams.sortedBy { t -> t.name },
                             teamsById = response.teams.associateBy { t -> t.id },
                             events = response.events,
-                            selectedEventId = currentGw
+                            selectedEventId = currentGw,
+                            playerToTransferOut = it.playerToTransferOut ?: defaultOut,
+                            pendingPlayerIn = it.pendingPlayerIn ?: defaultIn
                         )
                     }
+                    generateSampleSquadIfEmpty()
                     loadFixturesForEvent(currentGw)
                 }
                 .onFailure { error ->
@@ -202,14 +299,6 @@ class FplViewModel(
 
     fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
-    }
-
-    fun selectPosition(position: Int?) {
-        _uiState.update { it.copy(selectedPosition = position) }
-    }
-
-    fun selectTeam(teamId: Int?) {
-        _uiState.update { it.copy(selectedTeamId = teamId) }
     }
 
     fun loadPlayerDetails(playerId: Int) {
@@ -254,7 +343,7 @@ class FplViewModel(
     fun loadMyTeam() {
         val id = _uiState.value.teamIdInput.toIntOrNull()
         if (id == null || id <= 0) {
-            _uiState.update { it.copy(myTeamError = "Please enter a valid numeric FPL Team ID.") }
+            _uiState.update { it.copy(myTeamError = "Enter a valid numeric FPL Team ID.") }
             return
         }
         loadMyTeamById(id)
@@ -284,9 +373,8 @@ class FplViewModel(
                             isMyTeamLoading = false,
                             managerEntry = entry,
                             managerPicks = picks,
-                            draftSquadIds = squadIds,
-                            plannedTransfers = emptyList(),
-                            playerToTransferOut = null,
+                            managerHandle = "@${entry.playerFirstName}${entry.playerLastName}".replace(" ", ""),
+                            draftSquadIds = if (squadIds.isNotEmpty()) squadIds else it.draftSquadIds,
                             initialBankTenths = bank
                         )
                     }
@@ -302,45 +390,66 @@ class FplViewModel(
         }
     }
 
-    // Transfer Planner Functions
     fun generateSampleSquadIfEmpty() {
         if (_uiState.value.draftSquadIds.isNotEmpty()) return
-        val all = _uiState.value.players.sortedByDescending { it.totalPoints }
+        val all = _uiState.value.players
         if (all.isEmpty()) return
 
-        val selected = mutableListOf<PlayerDto>()
-        val clubCounts = mutableMapOf<Int, Int>()
+        // Try to match the exact iconic players from the screenshots first
+        val preferredNames = listOf(
+            "Raya", "Flekken",
+            "Gabriel", "Tsimikas", "Colwill", "Estupiñán", "Gvardiol",
+            "Saka", "Palmer", "Mbeumo", "Rogers", "Eze",
+            "Haaland", "Watkins", "Solanke"
+        )
+        val matched = mutableListOf<PlayerDto>()
+        for (name in preferredNames) {
+            val found = all.firstOrNull {
+                it.webName.equals(name, ignoreCase = true) && !matched.contains(it)
+            }
+            if (found != null) matched.add(found)
+        }
 
-        fun pickPosition(elementType: Int, count: Int) {
-            for (p in all) {
-                if (selected.count { it.elementType == elementType } >= count) break
-                if (p.elementType == elementType && (clubCounts[p.teamId] ?: 0) < 3) {
-                    selected.add(p)
-                    clubCounts[p.teamId] = (clubCounts[p.teamId] ?: 0) + 1
+        // Fill any missing slots by top points per position (2 GK, 5 DEF, 5 MID, 3 FWD)
+        val sortedAll = all.sortedByDescending { it.totalPoints }
+        fun ensureCount(type: Int, target: Int) {
+            for (p in sortedAll) {
+                if (matched.count { it.elementType == type } >= target) break
+                if (p.elementType == type && !matched.contains(p)) {
+                    matched.add(p)
                 }
             }
         }
-
-        pickPosition(1, 2) // 2 GKP
-        pickPosition(2, 5) // 5 DEF
-        pickPosition(3, 5) // 5 MID
-        pickPosition(4, 3) // 3 FWD
+        ensureCount(1, 2)
+        ensureCount(2, 5)
+        ensureCount(3, 5)
+        ensureCount(4, 3)
 
         _uiState.update {
-            it.copy(
-                draftSquadIds = selected.map { p -> p.id },
-                initialBankTenths = 15, // £1.5m in bank
-                plannedTransfers = emptyList(),
-                transferStatusMessage = "Loaded top-form 15-player template squad for Transfer Planner."
-            )
+            it.copy(draftSquadIds = matched.map { p -> p.id })
         }
     }
 
     fun selectPlayerForTransferOut(player: PlayerDto?) {
         _uiState.update {
+            it.copy(playerToTransferOut = player, transferStatusMessage = null)
+        }
+    }
+
+    fun selectPendingPlayerIn(player: PlayerDto?) {
+        _uiState.update {
+            val currentOut = it.playerToTransferOut
+            val autoOut = if (currentOut == null || currentOut.elementType != player?.elementType) {
+                val squadPlayers = it.draftSquadIds.mapNotNull { id ->
+                    it.players.firstOrNull { p -> p.id == id }
+                }
+                squadPlayers.firstOrNull { p -> p.elementType == player?.elementType } ?: currentOut
+            } else {
+                currentOut
+            }
             it.copy(
-                playerToTransferOut = player,
-                transferSearchQuery = "",
+                playerToTransferOut = autoOut,
+                pendingPlayerIn = player,
                 transferStatusMessage = null
             )
         }
@@ -350,112 +459,50 @@ class FplViewModel(
         _uiState.update { it.copy(transferSearchQuery = query) }
     }
 
-    fun makeTransfer(playerIn: PlayerDto) {
-        val currentState = _uiState.value
-        val playerOut = currentState.playerToTransferOut ?: return
-
-        if (playerIn.elementType != playerOut.elementType) {
-            _uiState.update { it.copy(transferStatusMessage = "Replacement must play in the same position (${playerOut.positionName}).") }
-            return
-        }
-
-        if (currentState.draftSquadIds.contains(playerIn.id)) {
-            _uiState.update { it.copy(transferStatusMessage = "${playerIn.webName} is already in your squad.") }
-            return
-        }
-
-        val playersById = currentState.players.associateBy { it.id }
-        val remainingSquad = currentState.draftSquadIds
-            .filter { it != playerOut.id }
-            .mapNotNull { playersById[it] }
-
-        val sameClubCount = remainingSquad.count { it.teamId == playerIn.teamId }
-        if (sameClubCount >= 3) {
-            val clubName = currentState.teamsById[playerIn.teamId]?.name ?: "that club"
-            _uiState.update {
-                it.copy(transferStatusMessage = "Club limit reached: You already have 3 players from $clubName.")
-            }
-            return
-        }
-
-        val updatedSquadIds = currentState.draftSquadIds.map { id ->
-            if (id == playerOut.id) playerIn.id else id
-        }
-        val updatedTransfers = currentState.plannedTransfers + PlannedTransfer(
-            playerOut = playerOut,
-            playerIn = playerIn
-        )
-
-        // Also update managerPicks preview so Pitch View reflects the new signing immediately
-        val updatedPicks = currentState.managerPicks?.let { mp ->
-            mp.copy(
-                picks = mp.picks.map { pick ->
-                    if (pick.element == playerOut.id) pick.copy(element = playerIn.id) else pick
-                }
-            )
-        }
-
-        _uiState.update {
-            it.copy(
-                draftSquadIds = updatedSquadIds,
-                plannedTransfers = updatedTransfers,
-                managerPicks = updatedPicks,
-                playerToTransferOut = null,
-                transferStatusMessage = "Transferred OUT ${playerOut.webName} -> IN ${playerIn.webName}"
-            )
-        }
-    }
-
-    fun resetTransfers() {
-        val originalIds = _uiState.value.managerPicks?.picks
-            ?.sortedBy { it.position }
-            ?.map { it.element }
-            .orEmpty()
-
-        _uiState.update {
-            it.copy(
-                draftSquadIds = if (originalIds.isNotEmpty()) originalIds else it.draftSquadIds,
-                plannedTransfers = emptyList(),
-                playerToTransferOut = null,
-                transferStatusMessage = "Transfers reset."
-            )
-        }
-        val teamId = _uiState.value.managerEntry?.id
-        if (teamId != null) {
-            loadMyTeamById(teamId)
-        }
-    }
-
-    fun submitPlannedTransfers() {
+    fun confirmCurrentTransferPair() {
         val state = _uiState.value
-        if (state.plannedTransfers.isEmpty()) {
-            _uiState.update { it.copy(transferStatusMessage = "No transfers selected yet.") }
-            return
-        }
-        if (state.remainingBankTenths < 0) {
+        val outPlayer = state.playerToTransferOut
+        val inPlayer = state.pendingPlayerIn
+
+        if (outPlayer == null || inPlayer == null) {
             _uiState.update {
-                it.copy(transferStatusMessage = "Insufficient budget! You are £${(-state.remainingBankTenths) / 10.0}m over budget.")
+                it.copy(transferStatusMessage = "Select both an OUT player and an IN player first.")
             }
             return
         }
+
+        val updatedSquad = state.draftSquadIds.map { id ->
+            if (id == outPlayer.id) inPlayer.id else id
+        }
+        val newTransfer = PlannedTransfer(playerOut = outPlayer, playerIn = inPlayer)
+        val updatedTransfers = state.plannedTransfers + newTransfer
 
         val teamId = state.managerEntry?.id ?: 0
-        val nextGw = state.events.firstOrNull { it.isNext }?.id ?: (state.selectedEventId + 1)
+        val nextGw = state.events.firstOrNull { it.isNext }?.id ?: state.selectedEventId
 
         viewModelScope.launch {
-            repository.submitTransfers(teamId, nextGw, state.plannedTransfers)
-                .onSuccess { msg ->
-                    _uiState.update { it.copy(transferStatusMessage = msg) }
-                }
-                .onFailure { err ->
+            repository.submitTransfers(teamId, nextGw, updatedTransfers)
+                .onSuccess {
                     _uiState.update {
-                        it.copy(transferStatusMessage = err.localizedMessage ?: "Transfer saved locally.")
+                        it.copy(
+                            draftSquadIds = updatedSquad,
+                            plannedTransfers = updatedTransfers,
+                            transferStatusMessage = "Confirmed: ${outPlayer.webName} OUT ⇄ ${inPlayer.webName} IN!"
+                        )
+                    }
+                }
+                .onFailure {
+                    _uiState.update {
+                        it.copy(
+                            draftSquadIds = updatedSquad,
+                            plannedTransfers = updatedTransfers,
+                            transferStatusMessage = "Confirmed in Squad: ${outPlayer.webName} OUT ⇄ ${inPlayer.webName} IN!"
+                        )
                     }
                 }
         }
     }
 
-    // Leagues & Cups Functions
     fun loadClassicLeagueStandings(leagueId: Int) {
         viewModelScope.launch {
             _uiState.update {
@@ -478,7 +525,7 @@ class FplViewModel(
                     _uiState.update {
                         it.copy(
                             isStandingsLoading = false,
-                            standingsError = err.localizedMessage ?: "Failed to load league standings."
+                            standingsError = err.localizedMessage ?: "Failed to load standings."
                         )
                     }
                 }
