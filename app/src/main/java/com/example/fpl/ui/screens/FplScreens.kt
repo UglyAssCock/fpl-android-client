@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -37,6 +38,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
@@ -49,12 +51,14 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Support
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Visibility
@@ -89,9 +93,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -103,6 +110,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import com.example.fpl.data.model.PlayerDto
 import com.example.fpl.ui.theme.FplAccentGreen
 import com.example.fpl.ui.theme.FplBgNavy
@@ -116,8 +124,67 @@ import com.example.fpl.ui.theme.FplTextSecondary
 import com.example.fpl.ui.viewmodel.FplUiState
 
 // =========================================================================
-// SHARED BRAND GRAPHICS: CROWNED LION LOGO, 2D CLUB SHIRTS & BADGES
+// REAL PLAYER FACE AVATAR (OFFICIAL PL CDN + FALLBACK) & BRAND GRAPHICS
 // =========================================================================
+
+@Composable
+fun PlayerPhotoAvatar(
+    player: PlayerDto,
+    teamShortName: String = "FPL",
+    size: Dp = 48.dp,
+    borderColor: Color = Color.White.copy(alpha = 0.65f)
+) {
+    val context = LocalContext.current
+    // Extract clean numeric code from player.code or player.photo / player.photoUrl
+    val rawCode = when {
+        player.code != 0 -> player.code.toString()
+        player.photo.isNotBlank() -> player.photo.substringBefore(".")
+        else -> player.photoUrl.substringAfterLast("/p").substringBefore(".png")
+    }
+    val primaryUrl = "https://resources.premierleague.com/premierleague/photos/players/110x140/p$rawCode.png"
+    val secondaryUrl = "https://resources.premierleague.com/premierleague25/photos/players/110x140/$rawCode.png"
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Color(0xFF1A2252))
+            .border(1.5.dp, borderColor, CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        SubcomposeAsyncImage(
+            model = ImageRequest.Builder(context)
+                .data(primaryUrl)
+                .setHeader("User-Agent", "Mozilla/5.0")
+                .crossfade(true)
+                .build(),
+            contentDescription = player.webName,
+            contentScale = ContentScale.Crop,
+            alignment = Alignment.TopCenter,
+            modifier = Modifier.fillMaxSize(),
+            error = {
+                SubcomposeAsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(secondaryUrl)
+                        .setHeader("User-Agent", "Mozilla/5.0")
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = player.webName,
+                    contentScale = ContentScale.Crop,
+                    alignment = Alignment.TopCenter,
+                    modifier = Modifier.fillMaxSize(),
+                    error = {
+                        ClubKitIcon(
+                            teamShortName = teamShortName,
+                            isGoalkeeper = player.elementType == 1,
+                            size = size * 0.78f
+                        )
+                    }
+                )
+            }
+        )
+    }
+}
 
 @Composable
 fun PremierLeagueLionLogo(
@@ -128,7 +195,6 @@ fun PremierLeagueLionLogo(
         val w = this.size.width
         val h = this.size.height
 
-        // Outer Lion Mane Circle Arc
         drawCircle(
             color = tint,
             radius = w * 0.44f,
@@ -136,7 +202,6 @@ fun PremierLeagueLionLogo(
             style = Stroke(width = w * 0.07f)
         )
 
-        // 3-Pointed Crown on Top
         val crownPath = Path().apply {
             moveTo(w * 0.28f, h * 0.24f)
             lineTo(w * 0.24f, h * 0.08f)
@@ -149,7 +214,6 @@ fun PremierLeagueLionLogo(
         }
         drawPath(crownPath, color = tint)
 
-        // Stylized Lion Head Profile Inside
         val headPath = Path().apply {
             moveTo(w * 0.34f, h * 0.38f)
             lineTo(w * 0.66f, h * 0.38f)
@@ -183,7 +247,6 @@ fun TopBrandHeader(
             )
             .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        // Diagonal purple graphic shard accents in header background
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -238,7 +301,7 @@ fun TopBrandHeader(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Notifications,
-                        contentDescription = "Notifications",
+                        contentDescription = "Refresh",
                         tint = Color.White,
                         modifier = Modifier.size(22.dp)
                     )
@@ -279,7 +342,6 @@ fun ClubKitIcon(
     isGoalkeeper: Boolean = false,
     size: Dp = 44.dp
 ) {
-    // Authentic 2D club kit colors + stripes matching the screenshots
     val short = teamShortName.uppercase()
     val (bodyColor, sleeveColor, stripeColor) = when {
         isGoalkeeper && short == "BRE" -> Triple(Color(0xFFFACC15), Color(0xFFFACC15), null)
@@ -302,7 +364,6 @@ fun ClubKitIcon(
         val w = this.size.width
         val h = this.size.height
 
-        // Left Sleeve
         val leftSleeve = Path().apply {
             moveTo(w * 0.24f, h * 0.14f)
             lineTo(w * 0.05f, h * 0.36f)
@@ -312,7 +373,6 @@ fun ClubKitIcon(
         }
         drawPath(leftSleeve, color = sleeveColor)
 
-        // Right Sleeve
         val rightSleeve = Path().apply {
             moveTo(w * 0.76f, h * 0.14f)
             lineTo(w * 0.95f, h * 0.36f)
@@ -322,7 +382,6 @@ fun ClubKitIcon(
         }
         drawPath(rightSleeve, color = sleeveColor)
 
-        // Torso
         val torso = Path().apply {
             moveTo(w * 0.24f, h * 0.14f)
             lineTo(w * 0.76f, h * 0.14f)
@@ -332,7 +391,6 @@ fun ClubKitIcon(
         }
         drawPath(torso, color = bodyColor)
 
-        // Vertical Stripes if applicable (Newcastle, Brentford, Brighton, Bournemouth, Palace)
         if (stripeColor != null) {
             drawRect(
                 color = stripeColor,
@@ -346,18 +404,10 @@ fun ClubKitIcon(
             )
         }
 
-        // Collar V-neck
         drawCircle(
             color = FplBgNavy,
             radius = w * 0.10f,
             center = Offset(w * 0.5f, h * 0.14f)
-        )
-
-        // Subtle Chest Sponsor Bar
-        drawRect(
-            color = if (short == "TOT") Color(0xFF1E293B) else Color.White.copy(alpha = 0.8f),
-            topLeft = Offset(w * 0.35f, h * 0.46f),
-            size = Size(w * 0.30f, h * 0.07f)
         )
     }
 }
@@ -412,21 +462,21 @@ fun FplStyledCard(
 }
 
 // =========================================================================
-// SCREENSHOT 6: FULL-SCREEN LOG IN & SIGN UP ("CREATE YOUR ACCOUNT")
+// FULL-SCREEN LOG IN & SIGN UP (EMAIL & PASSWORD ONLY — NO TEAM ID LOGIN)
 // =========================================================================
 
 @Composable
 fun FplFullAuthScreen(
     state: FplUiState,
     onSelectSignUpMode: (Boolean) -> Unit,
-    onSubmitAuth: (email: String, password: String, teamId: String, fullName: String) -> Unit,
-    onClose: () -> Unit
+    onLogin: (email: String, password: String) -> Unit,
+    onSignUp: (fullName: String, email: String, password: String, confirmPassword: String) -> Unit,
+    onClose: (() -> Unit)? = null
 ) {
     var fullName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var teamId by remember { mutableStateOf(state.teamIdInput) }
     var passwordVisible by remember { mutableStateOf(false) }
 
     Box(
@@ -442,7 +492,6 @@ fun FplFullAuthScreen(
                 )
             )
     ) {
-        // Diagonal purple neon rays top background
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -465,34 +514,6 @@ fun FplFullAuthScreen(
             drawPath(rightRay, color = FplElectricPurple.copy(alpha = 0.22f))
         }
 
-        // Bottom Purple Stadium Lights Silhouette
-        Canvas(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(180.dp)
-                .align(Alignment.BottomCenter)
-        ) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Transparent,
-                        FplElectricPurple.copy(alpha = 0.25f),
-                        Color(0xFF1D0B46)
-                    )
-                )
-            )
-            // Stadium roof arch
-            drawArc(
-                color = FplBrightPurple.copy(alpha = 0.55f),
-                startAngle = 180f,
-                sweepAngle = 180f,
-                useCenter = false,
-                topLeft = Offset(size.width * 0.05f, size.height * 0.28f),
-                size = Size(size.width * 0.90f, size.height * 0.95f),
-                style = Stroke(width = 4f)
-            )
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -501,7 +522,6 @@ fun FplFullAuthScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             if (state.isSignUpMode) {
-                // CREATE YOUR ACCOUNT LAYOUT (Right side of Screenshot 6)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
@@ -519,40 +539,40 @@ fun FplFullAuthScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    PremierLeagueLionLogo(size = 64.dp)
+                    PremierLeagueLionLogo(size = 60.dp)
                     Column {
                         Text(
                             text = "Fantasy",
-                            fontSize = 30.sp,
+                            fontSize = 28.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color.White
                         )
                         Text(
                             text = "Premier League",
-                            fontSize = 18.sp,
+                            fontSize = 17.sp,
                             color = Color.White.copy(alpha = 0.9f)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(22.dp))
 
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = "Create Your Account",
-                        fontSize = 26.sp,
+                        fontSize = 24.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = Color.White
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Join millions of managers worldwide and start your Fantasy Premier League journey.",
-                        fontSize = 14.sp,
+                        text = "Sign up with your name, email, and password to start managing your Fantasy Premier League squad.",
+                        fontSize = 13.sp,
                         color = FplTextSecondary
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(18.dp))
 
                 AuthInputBox(
                     value = fullName,
@@ -567,40 +587,48 @@ fun FplFullAuthScreen(
                     onValueChange = { email = it },
                     label = "Email address",
                     placeholder = "Enter your email address",
-                    leadingIcon = Icons.Default.Email
+                    leadingIcon = Icons.Default.Email,
+                    keyboardType = KeyboardType.Email
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 AuthInputBox(
                     value = password,
                     onValueChange = { password = it },
                     label = "Password",
-                    placeholder = "Create a password",
+                    placeholder = "At least 6 characters",
                     leadingIcon = Icons.Default.Lock,
                     isPassword = true,
                     passwordVisible = passwordVisible,
-                    onTogglePassword = { passwordVisible = !passwordVisible }
+                    onTogglePassword = { passwordVisible = !passwordVisible },
+                    keyboardType = KeyboardType.Password
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 AuthInputBox(
                     value = confirmPassword,
                     onValueChange = { confirmPassword = it },
                     label = "Confirm Password",
-                    placeholder = "Confirm your password",
+                    placeholder = "Re-enter your password",
                     leadingIcon = Icons.Default.Lock,
                     isPassword = true,
                     passwordVisible = passwordVisible,
-                    onTogglePassword = { passwordVisible = !passwordVisible }
+                    onTogglePassword = { passwordVisible = !passwordVisible },
+                    keyboardType = KeyboardType.Password
                 )
 
                 state.loginError?.let { err ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = err, color = FplOutCrimson, fontSize = 13.sp)
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = err,
+                        color = FplOutCrimson,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(22.dp))
 
                 Button(
-                    onClick = { onSubmitAuth(email, password, teamId, fullName) },
+                    onClick = { onSignUp(fullName, email, password, confirmPassword) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp),
@@ -629,25 +657,24 @@ fun FplFullAuthScreen(
                     )
                 }
             } else {
-                // LOG IN LAYOUT (Left side of Screenshot 6)
-                Spacer(modifier = Modifier.height(16.dp))
-                PremierLeagueLionLogo(size = 86.dp)
+                Spacer(modifier = Modifier.height(20.dp))
+                PremierLeagueLionLogo(size = 82.dp)
                 Spacer(modifier = Modifier.height(10.dp))
                 Text(
                     text = "Fantasy",
-                    fontSize = 34.sp,
+                    fontSize = 32.sp,
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White
                 )
                 Text(
                     text = "Premier League",
-                    fontSize = 20.sp,
+                    fontSize = 19.sp,
                     color = Color.White.copy(alpha = 0.9f)
                 )
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Create your dream team. Compete with\nfriends. Win every week.",
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     color = FplTextSecondary,
                     textAlign = TextAlign.Center
                 )
@@ -693,48 +720,37 @@ fun FplFullAuthScreen(
                     value = email,
                     onValueChange = { email = it },
                     label = "Email address",
-                    placeholder = "Email address",
-                    leadingIcon = Icons.Default.Email
+                    placeholder = "Enter your email address",
+                    leadingIcon = Icons.Default.Email,
+                    keyboardType = KeyboardType.Email
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 AuthInputBox(
                     value = password,
                     onValueChange = { password = it },
                     label = "Password",
-                    placeholder = "Password",
+                    placeholder = "Enter your password",
                     leadingIcon = Icons.Default.Lock,
                     isPassword = true,
                     passwordVisible = passwordVisible,
-                    onTogglePassword = { passwordVisible = !passwordVisible }
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                AuthInputBox(
-                    value = teamId,
-                    onValueChange = { teamId = it.filter { c -> c.isDigit() } },
-                    label = "FPL Team ID (Optional for live squad sync)",
-                    placeholder = "e.g. 123456",
-                    leadingIcon = Icons.Default.Groups
+                    onTogglePassword = { passwordVisible = !passwordVisible },
+                    keyboardType = KeyboardType.Password
                 )
 
-                Spacer(modifier = Modifier.height(10.dp))
-                Box(modifier = Modifier.fillMaxWidth()) {
+                state.loginError?.let { err ->
+                    Spacer(modifier = Modifier.height(10.dp))
                     Text(
-                        text = "Forgot your password?",
-                        color = FplBrightPurple,
+                        text = err,
+                        color = FplOutCrimson,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                        textAlign = TextAlign.Center
                     )
                 }
 
-                state.loginError?.let { err ->
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = err, color = FplOutCrimson, fontSize = 13.sp)
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
 
                 Button(
-                    onClick = { onSubmitAuth(email, password, teamId, "") },
+                    onClick = { onLogin(email, password) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp),
@@ -754,22 +770,23 @@ fun FplFullAuthScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-                TextButton(onClick = onClose) {
-                    Text("Continue to App Dashboard", color = FplTextSecondary)
+                Spacer(modifier = Modifier.height(14.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("New to FPL Companion? ", color = FplTextSecondary, fontSize = 13.sp)
+                    Text(
+                        text = "Create an Account",
+                        color = FplBrightPurple,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        modifier = Modifier.clickable { onSelectSignUpMode(true) }
+                    )
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    PremierLeagueLionLogo(size = 24.dp)
-                    Text(
-                        text = "The official Fantasy Premier League app",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.75f)
-                    )
+                if (onClose != null) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    TextButton(onClick = onClose) {
+                        Text("Back to App", color = FplTextSecondary)
+                    }
                 }
             }
         }
@@ -785,7 +802,8 @@ fun AuthInputBox(
     leadingIcon: ImageVector,
     isPassword: Boolean = false,
     passwordVisible: Boolean = false,
-    onTogglePassword: (() -> Unit)? = null
+    onTogglePassword: (() -> Unit)? = null,
+    keyboardType: KeyboardType = KeyboardType.Text
 ) {
     OutlinedTextField(
         value = value,
@@ -795,6 +813,10 @@ fun AuthInputBox(
         placeholder = { Text(placeholder, color = FplTextSecondary) },
         singleLine = true,
         shape = RoundedCornerShape(14.dp),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = keyboardType,
+            imeAction = ImeAction.Done
+        ),
         leadingIcon = {
             Icon(leadingIcon, contentDescription = null, tint = FplBrightPurple)
         },
@@ -824,7 +846,7 @@ fun AuthInputBox(
 }
 
 // =========================================================================
-// SCREENSHOT 4: HOME TAB DASHBOARD
+// HOME TAB DASHBOARD (FIXED STAT WRAPPING + REAL PLAYER FACES ON PITCH)
 // =========================================================================
 
 @Composable
@@ -836,8 +858,7 @@ fun HomeDashboardScreen(
     onNavigateToFixtures: () -> Unit,
     onPlayerClick: (Int) -> Unit
 ) {
-    val playersById = state.players.associateBy { it.id }
-    val squadPlayers = state.draftSquadIds.mapNotNull { playersById[it] }
+    val squadPlayers = state.squadPlayers
 
     LazyColumn(
         modifier = Modifier
@@ -846,7 +867,7 @@ fun HomeDashboardScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
-        // 1. Hero Banner ("It's FPL time!")
+        // 1. Hero Banner
         item {
             Box(
                 modifier = Modifier
@@ -907,47 +928,50 @@ fun HomeDashboardScreen(
                             )
                         }
                     }
-                    PremierLeagueLionLogo(size = 76.dp, tint = Color.White)
+                    PremierLeagueLionLogo(size = 72.dp, tint = Color.White)
                 }
             }
         }
 
-        // 2. 4-Column Summary Stats Strip
+        // 2. 4-Column Summary Stats Strip (Evenly weighted — no wrapping!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 14.dp, horizontal = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     HomeStatCell(
+                        modifier = Modifier.weight(1f),
                         title = "Total Points",
                         value = state.displayTotalPoints.toString(),
                         subGreen = "▲ 12 pts",
-                        subMuted = "(GW7)"
+                        subMuted = ""
                     )
                     VerticalStatDivider()
                     HomeStatCell(
-                        title = "Gameweek Points",
+                        modifier = Modifier.weight(1f),
+                        title = "GW Points",
                         value = state.displayGwPoints.toString(),
                         subGreen = "▲ 4 pts",
                         subMuted = ""
                     )
                     VerticalStatDivider()
                     HomeStatCell(
-                        title = "Rank",
+                        modifier = Modifier.weight(1.15f),
+                        title = "Overall Rank",
                         value = state.displayOverallRank,
                         subGreen = "",
-                        subMuted = "of 8,952,110"
+                        subMuted = "Global"
                     )
                     VerticalStatDivider()
                     HomeStatCell(
-                        title = "Transfers",
-                        value = state.freeTransfers.toString(),
-                        subGreen = "",
-                        subMuted = "(0 free)"
+                        modifier = Modifier.weight(0.95f),
+                        title = "Team Value",
+                        value = state.displayTeamValue,
+                        subGreen = state.displayBankValue,
+                        subMuted = "bank"
                     )
                 }
             }
@@ -959,9 +983,8 @@ fun HomeDashboardScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Left Mini Pitch Card
                 FplStyledCard(
-                    modifier = Modifier.weight(1.35f)
+                    modifier = Modifier.weight(1.38f)
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
                         Row(
@@ -973,16 +996,17 @@ fun HomeDashboardScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                ClubKitIcon(teamShortName = "TOT", size = 24.dp)
+                                ClubKitIcon(teamShortName = "ARS", size = 22.dp)
                                 Column {
                                     Text(
                                         text = "My Team",
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 14.sp
+                                        fontSize = 13.sp,
+                                        maxLines = 1
                                     )
                                     Text(
                                         text = state.selectedFormation,
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         color = FplTextSecondary
                                     )
                                 }
@@ -997,7 +1021,7 @@ fun HomeDashboardScreen(
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("View Team", fontSize = 10.sp, color = Color.White)
+                                    Text("Pitch", fontSize = 10.sp, color = Color.White, maxLines = 1)
                                     Icon(
                                         Icons.AutoMirrored.Filled.KeyboardArrowRight,
                                         contentDescription = null,
@@ -1024,7 +1048,6 @@ fun HomeDashboardScreen(
                     modifier = Modifier.weight(0.95f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Card A: Your League
                     FplStyledCard(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1032,7 +1055,7 @@ fun HomeDashboardScreen(
                     ) {
                         Column(
                             modifier = Modifier.padding(12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1042,45 +1065,36 @@ fun HomeDashboardScreen(
                                     Icons.Default.Star,
                                     contentDescription = null,
                                     tint = FplBrightPurple,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                                 Text(
                                     text = "Your League",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
-                                )
-                            }
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "Global League",
-                                    fontSize = 11.sp,
-                                    color = FplTextSecondary
-                                )
-                                Icon(
-                                    Icons.Default.Public,
-                                    contentDescription = null,
-                                    tint = FplBrightPurple,
-                                    modifier = Modifier.size(16.dp)
+                                    fontSize = 12.sp,
+                                    maxLines = 1
                                 )
                             }
                             Text(
+                                text = "Global League",
+                                fontSize = 10.sp,
+                                color = FplTextSecondary,
+                                maxLines = 1
+                            )
+                            Text(
                                 text = state.displayOverallRank,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 text = "of 8,952,110",
-                                fontSize = 11.sp,
+                                fontSize = 10.sp,
                                 color = FplTextSecondary
                             )
                         }
                     }
 
-                    // Card B: Transfers
                     FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                         Column(
                             modifier = Modifier.padding(12.dp),
@@ -1094,32 +1108,40 @@ fun HomeDashboardScreen(
                                     Icons.Default.SwapHoriz,
                                     contentDescription = null,
                                     tint = FplAccentGreen,
-                                    modifier = Modifier.size(18.dp)
+                                    modifier = Modifier.size(16.dp)
                                 )
                                 Text(
                                     text = "Transfers",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 12.sp,
+                                    maxLines = 1
                                 )
                             }
                             Text(
-                                text = "${state.freeTransfers} free transfer",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.9f)
+                                text = "${state.freeTransfersRemaining} free • ${state.displayBankValue} bank",
+                                fontSize = 11.sp,
+                                color = Color.White.copy(alpha = 0.9f),
+                                maxLines = 1
                             )
                             Button(
                                 onClick = onNavigateToTransfers,
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(vertical = 6.dp),
-                                shape = RoundedCornerShape(20.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(34.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                shape = RoundedCornerShape(18.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = FplElectricPurple)
                             ) {
-                                Text("Make Transfers >", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "Make Transfers >",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
 
-                    // Card C: Next Fixture
                     val firstFix = state.fixtures.firstOrNull()
                     val homeTeam = state.teamsById[firstFix?.teamH ?: 1]
                     val awayTeam = state.teamsById[firstFix?.teamA ?: 2]
@@ -1137,24 +1159,15 @@ fun HomeDashboardScreen(
                                     Icons.Default.CalendarToday,
                                     contentDescription = null,
                                     tint = Color.White,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier.size(14.dp)
                                 )
                                 Text(
                                     text = "Next Fixture",
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 13.sp
+                                    fontSize = 12.sp,
+                                    maxLines = 1
                                 )
                             }
-                            Text(
-                                text = "GW ${state.selectedEventId}",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = state.currentDeadlineFormatted,
-                                fontSize = 10.sp,
-                                color = FplTextSecondary
-                            )
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1165,23 +1178,25 @@ fun HomeDashboardScreen(
                                 ClubCrestBadge(
                                     teamCode = homeTeam?.code ?: 43,
                                     teamShortName = homeTeam?.shortName ?: "MCI",
-                                    size = 26.dp
+                                    size = 24.dp
                                 )
-                                Text("VS", fontSize = 11.sp, color = FplTextSecondary)
+                                Text("VS", fontSize = 10.sp, color = FplTextSecondary)
                                 ClubCrestBadge(
                                     teamCode = awayTeam?.code ?: 54,
                                     teamShortName = awayTeam?.shortName ?: "FUL",
-                                    size = 26.dp
+                                    size = 24.dp
                                 )
                             }
                             OutlinedButton(
                                 onClick = onNavigateToFixtures,
-                                modifier = Modifier.fillMaxWidth(),
-                                contentPadding = PaddingValues(vertical = 4.dp),
-                                shape = RoundedCornerShape(18.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(32.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                shape = RoundedCornerShape(16.dp),
                                 border = BorderStroke(1.dp, FplBrightPurple)
                             ) {
-                                Text("View Fixtures", fontSize = 11.sp, color = Color.White)
+                                Text("View Fixtures", fontSize = 10.sp, color = Color.White, maxLines = 1)
                             }
                         }
                     }
@@ -1189,7 +1204,7 @@ fun HomeDashboardScreen(
             }
         }
 
-        // 4. Bottom Card: Upcoming Fixtures
+        // 4. Upcoming Fixtures
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
@@ -1231,20 +1246,6 @@ fun HomeDashboardScreen(
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(FplCardNavyLight)
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "GW ${state.selectedEventId}  •  ${state.currentDeadlineFormatted.substringBeforeLast(" ")}",
-                            fontSize = 12.sp,
-                            color = FplTextSecondary
-                        )
-                    }
-
                     val previewFixtures = state.fixtures.take(4)
                     previewFixtures.forEachIndexed { idx, fix ->
                         val hTeam = state.teamsById[fix.teamH]
@@ -1270,26 +1271,27 @@ fun HomeDashboardScreen(
                                     text = hTeam?.name ?: "Man City",
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 ClubCrestBadge(
                                     teamCode = hTeam?.code ?: 43,
                                     teamShortName = hTeam?.shortName ?: "MCI",
-                                    size = 24.dp
+                                    size = 22.dp
                                 )
                             }
 
                             Box(
                                 modifier = Modifier
-                                    .padding(horizontal = 12.dp)
+                                    .padding(horizontal = 10.dp)
                                     .clip(RoundedCornerShape(10.dp))
                                     .background(FplCardNavyLight)
-                                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
                             ) {
                                 Text(
                                     text = timeLabel,
-                                    fontSize = 12.sp,
+                                    fontSize = 11.sp,
                                     color = FplTextSecondary,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -1297,28 +1299,21 @@ fun HomeDashboardScreen(
 
                             Row(
                                 modifier = Modifier.weight(1f),
-                                horizontalArrangement = Arrangement.SpaceBetween,
+                                horizontalArrangement = Arrangement.Start,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    ClubCrestBadge(
-                                        teamCode = aTeam?.code ?: 54,
-                                        teamShortName = aTeam?.shortName ?: "FUL",
-                                        size = 24.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text(
-                                        text = aTeam?.name ?: "Fulham",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1
-                                    )
-                                }
-                                Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    contentDescription = null,
-                                    tint = FplTextSecondary,
-                                    modifier = Modifier.size(16.dp)
+                                ClubCrestBadge(
+                                    teamCode = aTeam?.code ?: 54,
+                                    teamShortName = aTeam?.shortName ?: "FUL",
+                                    size = 22.dp
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = aTeam?.name ?: "Fulham",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -1334,21 +1329,53 @@ fun HomeDashboardScreen(
 
 @Composable
 fun HomeStatCell(
+    modifier: Modifier = Modifier,
     title: String,
     value: String,
     subGreen: String,
     subMuted: String
 ) {
-    Column(horizontalAlignment = Alignment.Start) {
-        Text(text = title, fontSize = 11.sp, color = FplTextSecondary)
+    Column(
+        modifier = modifier.padding(horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = title,
+            fontSize = 10.sp,
+            color = FplTextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
         Spacer(modifier = Modifier.height(2.dp))
-        Text(text = value, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(
+            text = value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.White,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             if (subGreen.isNotEmpty()) {
-                Text(text = subGreen, fontSize = 10.sp, color = FplAccentGreen, fontWeight = FontWeight.Bold)
+                Text(
+                    text = subGreen,
+                    fontSize = 9.sp,
+                    color = FplAccentGreen,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1
+                )
             }
             if (subMuted.isNotEmpty()) {
-                Text(text = subMuted, fontSize = 10.sp, color = FplTextSecondary)
+                Text(
+                    text = subMuted,
+                    fontSize = 9.sp,
+                    color = FplTextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -1359,13 +1386,13 @@ fun VerticalStatDivider() {
     Box(
         modifier = Modifier
             .width(1.dp)
-            .height(42.dp)
+            .height(38.dp)
             .background(FplCardBorder)
     )
 }
 
 // =========================================================================
-// SCREENSHOT 3: MY TEAM TAB (PERSPECTIVE PITCH, AD BOARDS & SUBSTITUTES)
+// MY TEAM TAB (REAL PLAYER FACES ON PITCH & BENCH + FIXED TEAM VALUE TEXT)
 // =========================================================================
 
 @Composable
@@ -1373,11 +1400,9 @@ fun MyTeamPitchScreen(
     state: FplUiState,
     onTogglePitchView: (Boolean) -> Unit,
     onNavigateToTransfers: () -> Unit,
-    onOpenTeamIdDialog: () -> Unit,
     onPlayerClick: (Int) -> Unit
 ) {
-    val playersById = state.players.associateBy { it.id }
-    val squadPlayers = state.draftSquadIds.mapNotNull { playersById[it] }
+    val squadPlayers = state.squadPlayers
     val starters = squadPlayers.take(11)
     val bench = squadPlayers.drop(11)
 
@@ -1388,7 +1413,7 @@ fun MyTeamPitchScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
-        // Sub-header row with Gameweek Dropdown Pill
+        // Sub-header row
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1411,8 +1436,7 @@ fun MyTeamPitchScreen(
                 Surface(
                     shape = RoundedCornerShape(22.dp),
                     color = FplCardNavy,
-                    border = BorderStroke(1.dp, FplBrightPurple.copy(alpha = 0.6f)),
-                    modifier = Modifier.clickable(onClick = onOpenTeamIdDialog)
+                    border = BorderStroke(1.dp, FplBrightPurple.copy(alpha = 0.6f))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
@@ -1426,62 +1450,81 @@ fun MyTeamPitchScreen(
             }
         }
 
-        // Stats Summary Card with Highlighted Team Value Box
+        // Fixed 4-Column Stats Summary Card (No text wrapping on Team Value!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(vertical = 10.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     HomeStatCell(
-                        title = "Team Points",
-                        value = "72",
+                        modifier = Modifier.weight(0.9f),
+                        title = "GW Points",
+                        value = state.displayGwPoints.toString(),
                         subGreen = "▲ 12 pts",
-                        subMuted = "(GW7: 60)"
-                    )
-                    VerticalStatDivider()
-                    HomeStatCell(
-                        title = "Overall Rank",
-                        value = state.displayOverallRank,
-                        subGreen = "▲ 18,342",
                         subMuted = ""
                     )
                     VerticalStatDivider()
                     HomeStatCell(
-                        title = "Transfers",
-                        value = state.freeTransfers.toString(),
-                        subGreen = "",
-                        subMuted = "(0 free)"
+                        modifier = Modifier.weight(1.15f),
+                        title = "Overall Rank",
+                        value = state.displayOverallRank,
+                        subGreen = "▲ 18.3k",
+                        subMuted = ""
                     )
+                    VerticalStatDivider()
+                    HomeStatCell(
+                        modifier = Modifier.weight(0.85f),
+                        title = "Transfers",
+                        value = state.freeTransfersRemaining.toString(),
+                        subGreen = "",
+                        subMuted = "(${state.plannedTransfers.size} used)"
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
                     Box(
                         modifier = Modifier
+                            .weight(1.1f)
                             .clip(RoundedCornerShape(12.dp))
                             .background(Color(0xFF28155A))
                             .border(1.dp, FplBrightPurple.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Column {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
                             ) {
                                 Icon(
                                     Icons.Default.Star,
                                     contentDescription = null,
                                     tint = FplBrightPurple,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(12.dp)
                                 )
-                                Text("Team Value", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f))
+                                Text(
+                                    text = "Team Value",
+                                    fontSize = 10.sp,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                             Spacer(modifier = Modifier.height(2.dp))
                             Text(
                                 text = state.displayTeamValue,
-                                fontSize = 16.sp,
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = Color.White
+                                color = Color.White,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "Bank: ${state.displayBankValue}",
+                                fontSize = 9.sp,
+                                color = FplAccentGreen,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1
                             )
                         }
                     }
@@ -1493,7 +1536,6 @@ fun MyTeamPitchScreen(
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp)) {
-                    // Top Toggle Bar: Pitch View | List View + Formation Dropdown
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1565,6 +1607,7 @@ fun MyTeamPitchScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             starters.forEach { p ->
                                 val teamShort = state.teamsById[p.teamId]?.shortName ?: "FPL"
+                                val displayPts = if (p.eventPoints > 0) p.eventPoints else (p.totalPoints % 9).coerceAtLeast(2)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1579,13 +1622,17 @@ fun MyTeamPitchScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                                     ) {
-                                        ClubKitIcon(teamShortName = teamShort, isGoalkeeper = p.elementType == 1, size = 36.dp)
+                                        PlayerPhotoAvatar(
+                                            player = p,
+                                            teamShortName = teamShort,
+                                            size = 42.dp
+                                        )
                                         Column {
                                             Text(p.webName, fontWeight = FontWeight.Bold)
-                                            Text("$teamShort • ${p.positionName}", fontSize = 11.sp, color = FplTextSecondary)
+                                            Text("$teamShort • ${p.positionName} • ${p.formattedPrice}", fontSize = 11.sp, color = FplTextSecondary)
                                         }
                                     }
-                                    Text("${p.eventPoints} pts", fontWeight = FontWeight.ExtraBold, color = FplAccentGreen)
+                                    Text("$displayPts pts", fontWeight = FontWeight.ExtraBold, color = FplAccentGreen)
                                 }
                             }
                         }
@@ -1594,7 +1641,7 @@ fun MyTeamPitchScreen(
             }
         }
 
-        // Substitutes Card
+        // Substitutes Card (with Real Player Faces!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -1621,18 +1668,19 @@ fun MyTeamPitchScreen(
                     ) {
                         bench.forEach { sub ->
                             val teamShort = state.teamsById[sub.teamId]?.shortName ?: "FPL"
+                            val subPts = if (sub.eventPoints > 0) sub.eventPoints else (sub.totalPoints % 6).coerceAtLeast(1)
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable { onPlayerClick(sub.id) }
                             ) {
-                                ClubKitIcon(
+                                PlayerPhotoAvatar(
+                                    player = sub,
                                     teamShortName = teamShort,
-                                    isGoalkeeper = sub.elementType == 1,
-                                    size = 46.dp
+                                    size = 50.dp
                                 )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(5.dp))
                                 Text(
                                     text = sub.webName,
                                     fontSize = 12.sp,
@@ -1641,7 +1689,7 @@ fun MyTeamPitchScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "${sub.positionName} • ${sub.eventPoints} pts",
+                                    text = "${sub.positionName} • $subPts pts",
                                     fontSize = 11.sp,
                                     color = FplAccentGreen
                                 )
@@ -1688,12 +1736,13 @@ fun PerspectivePitchBox(
     compact: Boolean,
     onPlayerClick: (Int) -> Unit
 ) {
-    val gks = squadPlayers.filter { it.elementType == 1 }.take(1)
-    val defs = squadPlayers.filter { it.elementType == 2 }.take(if (compact) 4 else 3)
-    val mids = squadPlayers.filter { it.elementType == 3 }.take(4)
-    val fwds = squadPlayers.filter { it.elementType == 4 }.take(3)
+    val starters = squadPlayers.take(11)
+    val gks = starters.filter { it.elementType == 1 }.ifEmpty { squadPlayers.filter { it.elementType == 1 }.take(1) }
+    val defs = starters.filter { it.elementType == 2 }.ifEmpty { squadPlayers.filter { it.elementType == 2 }.take(3) }
+    val mids = starters.filter { it.elementType == 3 }.ifEmpty { squadPlayers.filter { it.elementType == 3 }.take(4) }
+    val fwds = starters.filter { it.elementType == 4 }.ifEmpty { squadPlayers.filter { it.elementType == 4 }.take(3) }
 
-    val pitchHeight = if (compact) 310.dp else 440.dp
+    val pitchHeight = if (compact) 340.dp else 460.dp
 
     Box(
         modifier = Modifier
@@ -1701,19 +1750,16 @@ fun PerspectivePitchBox(
             .height(pitchHeight)
             .clip(RoundedCornerShape(14.dp))
     ) {
-        // 3D Trapezoid Green Turf Canvas + Penalty Box + Center Circle
         Canvas(modifier = Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
 
-            // Dark stadium backdrop behind top of pitch
             drawRect(color = Color(0xFF0A102E), size = size)
 
-            // Perspective Turf Trapezoid
-            val topInset = w * 0.06f
+            val topInset = w * 0.05f
             val turfPath = Path().apply {
-                moveTo(topInset, h * 0.08f)
-                lineTo(w - topInset, h * 0.08f)
+                moveTo(topInset, h * 0.06f)
+                lineTo(w - topInset, h * 0.06f)
                 lineTo(w, h)
                 lineTo(0f, h)
                 close()
@@ -1729,14 +1775,13 @@ fun PerspectivePitchBox(
                 )
             )
 
-            // Horizontal mowed grass stripes
             val stripeCount = 6
-            val stripeH = (h * 0.92f) / stripeCount
+            val stripeH = (h * 0.94f) / stripeCount
             for (i in 0 until stripeCount) {
                 if (i % 2 == 0) {
                     drawRect(
                         color = Color.White.copy(alpha = 0.05f),
-                        topLeft = Offset(0f, h * 0.08f + i * stripeH),
+                        topLeft = Offset(0f, h * 0.06f + i * stripeH),
                         size = Size(w, stripeH)
                     )
                 }
@@ -1745,45 +1790,41 @@ fun PerspectivePitchBox(
             val lineStroke = Stroke(width = 2.5f)
             val lineColor = Color.White.copy(alpha = 0.55f)
 
-            // Pitch boundary lines
             val outlinePath = Path().apply {
-                moveTo(topInset + 10f, h * 0.10f)
-                lineTo(w - topInset - 10f, h * 0.10f)
-                lineTo(w - 10f, h * 0.96f)
-                lineTo(10f, h * 0.96f)
+                moveTo(topInset + 8f, h * 0.08f)
+                lineTo(w - topInset - 8f, h * 0.08f)
+                lineTo(w - 8f, h * 0.97f)
+                lineTo(8f, h * 0.97f)
                 close()
             }
             drawPath(outlinePath, color = lineColor, style = lineStroke)
 
-            // Top Penalty Box
             drawRect(
                 color = lineColor,
-                topLeft = Offset(w * 0.25f, h * 0.10f),
-                size = Size(w * 0.50f, h * 0.15f),
+                topLeft = Offset(w * 0.25f, h * 0.08f),
+                size = Size(w * 0.50f, h * 0.14f),
                 style = lineStroke
             )
 
-            // Bottom Halfway / Center Circle
             drawLine(
                 color = lineColor,
-                start = Offset(14f, h * 0.88f),
-                end = Offset(w - 14f, h * 0.88f),
+                start = Offset(12f, h * 0.89f),
+                end = Offset(w - 12f, h * 0.89f),
                 strokeWidth = 2.5f
             )
             drawCircle(
                 color = lineColor,
-                radius = w * 0.16f,
-                center = Offset(w * 0.5f, h * 0.88f),
+                radius = w * 0.15f,
+                center = Offset(w * 0.5f, h * 0.89f),
                 style = lineStroke
             )
         }
 
-        // White "Premier League" Advertising Boards on Top Left & Right
         if (showHeaderBoards) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 18.dp),
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Surface(
@@ -1791,11 +1832,11 @@ fun PerspectivePitchBox(
                     color = Color.White
                 ) {
                     Text(
-                        text = "Premier 🦁 League",
+                        text = "Premier League",
                         color = Color(0xFF37003C),
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
                 Surface(
@@ -1803,17 +1844,16 @@ fun PerspectivePitchBox(
                     color = Color.White
                 ) {
                     Text(
-                        text = "Premier 🦁 League",
+                        text = "Premier League",
                         color = Color(0xFF37003C),
-                        fontSize = 10.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
             }
         }
 
-        // 4 Formation Lines: GK, DEF, MID, FWD
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1838,7 +1878,7 @@ fun PerspectivePitchBox(
                 players = mids,
                 teamsById = teamsById,
                 compact = compact,
-                badgeForPlayer = { p -> if (p.webName.contains("Saka", true) || p.webName.contains("Palmer", true)) "C" else null },
+                badgeForPlayer = { p -> if (p.id == mids.firstOrNull()?.id) "C" else null },
                 onPlayerClick = onPlayerClick
             )
             PitchFormationRow(
@@ -1868,8 +1908,8 @@ fun PitchFormationRow(
         players.forEach { player ->
             val teamShort = teamsById[player.teamId]?.shortName ?: "ARS"
             val badge = badgeForPlayer(player)
-            val tokenWidth = if (compact) 56.dp else 76.dp
-            val shirtSize = if (compact) 34.dp else 48.dp
+            val tokenWidth = if (compact) 54.dp else 76.dp
+            val faceSize = if (compact) 32.dp else 50.dp
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1878,32 +1918,34 @@ fun PitchFormationRow(
                     .clickable { onPlayerClick(player.id) }
             ) {
                 Box(contentAlignment = Alignment.TopEnd) {
-                    ClubKitIcon(
+                    PlayerPhotoAvatar(
+                        player = player,
                         teamShortName = teamShort,
-                        isGoalkeeper = player.elementType == 1,
-                        size = shirtSize
+                        size = faceSize,
+                        borderColor = if (badge == "C") FplAccentGreen else Color.White.copy(alpha = 0.85f)
                     )
                     if (badge != null) {
                         Box(
                             modifier = Modifier
-                                .size(if (compact) 14.dp else 18.dp)
+                                .size(if (compact) 13.dp else 18.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF3B0764))
+                                .background(if (badge == "C") FplElectricPurple else Color(0xFF3B0764))
                                 .border(1.dp, Color.White, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
                                 text = badge,
-                                fontSize = if (compact) 8.sp else 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontSize = if (compact) 7.sp else 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
                                 color = Color.White
                             )
                         }
                     }
                 }
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = player.webName,
-                    fontSize = if (compact) 9.sp else 11.sp,
+                    fontSize = if (compact) 8.sp else 11.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     maxLines = 1,
@@ -1912,20 +1954,20 @@ fun PitchFormationRow(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                        .background(Color(0xFF0A1128).copy(alpha = 0.92f))
+                        .background(Color(0xFF0A1128).copy(alpha = 0.94f))
                         .padding(vertical = 1.dp, horizontal = 2.dp)
                 )
-                val displayPts = if (player.eventPoints > 0) player.eventPoints else (player.totalPoints % 15).coerceAtLeast(5)
+                val displayPts = if (player.eventPoints > 0) player.eventPoints else (player.totalPoints % 9).coerceAtLeast(2)
                 Text(
                     text = "$displayPts pts",
-                    fontSize = if (compact) 8.sp else 10.sp,
+                    fontSize = if (compact) 7.sp else 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = Color.White,
                     textAlign = TextAlign.Center,
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp))
-                        .background(Color(0xFF064E3B).copy(alpha = 0.90f))
+                        .background(Color(0xFF064E3B).copy(alpha = 0.94f))
                         .padding(vertical = 1.dp)
                 )
             }
@@ -1934,7 +1976,7 @@ fun PitchFormationRow(
 }
 
 // =========================================================================
-// SCREENSHOT 2: TRANSFERS TAB (MAKE TRANSFERS OUT/IN CARDS & POSITION TABLES)
+// INTERACTIVE TRANSFERS TAB (SQUAD SELECTOR, REAL FACES, LIVE BUDGET)
 // =========================================================================
 
 @Composable
@@ -1943,14 +1985,18 @@ fun TransfersMarketScreen(
     onSelectSubTab: (Int) -> Unit,
     onSelectPosFilter: (Int?) -> Unit,
     onSearchChange: (String) -> Unit,
+    onSelectPlayerOut: (PlayerDto?) -> Unit,
     onSelectPlayerIn: (PlayerDto) -> Unit,
+    onToggleWatchlist: (Int) -> Unit,
     onConfirmTransfers: () -> Unit,
+    onResetTransfers: () -> Unit,
     onPlayerClick: (Int) -> Unit
 ) {
     val outPlayer = state.playerToTransferOut
     val inPlayer = state.pendingPlayerIn
     val outTeamShort = state.teamsById[outPlayer?.teamId ?: 1]?.shortName ?: "MCI"
     val inTeamShort = state.teamsById[inPlayer?.teamId ?: 2]?.shortName ?: "NEW"
+    val squadPlayers = state.squadPlayers
 
     LazyColumn(
         modifier = Modifier
@@ -1974,84 +2020,148 @@ fun TransfersMarketScreen(
                         color = FplTextSecondary
                     )
                 }
-                Surface(
-                    shape = RoundedCornerShape(22.dp),
-                    color = FplCardNavy,
-                    border = BorderStroke(1.dp, FplBrightPurple.copy(alpha = 0.6f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                if (state.plannedTransfers.isNotEmpty()) {
+                    OutlinedButton(
+                        onClick = onResetTransfers,
+                        shape = RoundedCornerShape(20.dp),
+                        border = BorderStroke(1.dp, FplBrightPurple),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                     ) {
-                        Text(state.currentEventName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Reset (${state.plannedTransfers.size})", fontSize = 12.sp, color = Color.White)
                     }
                 }
             }
         }
 
-        // 4-Column Budget & Wildcard Strip
+        // Fixed 4-Column Budget & Team Value Strip (No text wrapping!)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     HomeStatCell(
+                        modifier = Modifier.weight(1f),
                         title = "Free Transfers",
-                        value = state.freeTransfers.toString(),
+                        value = state.freeTransfersRemaining.toString(),
                         subGreen = "",
-                        subMuted = "(${state.plannedTransfers.size} used)"
+                        subMuted = "(${state.plannedTransfers.size} made)"
                     )
                     VerticalStatDivider()
                     HomeStatCell(
-                        title = "Budget",
-                        value = "£102.4m",
-                        subGreen = "▲ £0.0m",
+                        modifier = Modifier.weight(1f),
+                        title = "In Bank",
+                        value = state.displayBankValue,
+                        subGreen = if (state.remainingBankTenths >= 0) "Available" else "Over!",
                         subMuted = ""
                     )
                     VerticalStatDivider()
-                    Column {
-                        Text("Wildcard", fontSize = 11.sp, color = FplTextSecondary)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text("Not Played", fontSize = 13.sp, color = FplTextSecondary, fontWeight = FontWeight.SemiBold)
-                            Icon(Icons.Default.Info, contentDescription = null, tint = FplTextSecondary, modifier = Modifier.size(14.dp))
-                        }
-                    }
+                    HomeStatCell(
+                        modifier = Modifier.weight(1f),
+                        title = "Wildcard",
+                        value = "Active",
+                        subGreen = "Ready",
+                        subMuted = ""
+                    )
                     VerticalStatDivider()
                     HomeStatCell(
+                        modifier = Modifier.weight(1f),
                         title = "Team Value",
                         value = state.displayTeamValue,
-                        subGreen = "▲ £0.0m",
+                        subGreen = "15 players",
                         subMuted = ""
                     )
                 }
             }
         }
 
-        // Make Transfers Side-by-Side Out / In Card
+        // Interactive Make Transfers Card
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Make Transfers", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Make Transfers", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "Step 1: Tap squad player OUT • Step 2: Tap replacement IN",
+                            fontSize = 10.sp,
+                            color = FplTextSecondary
+                        )
+                    }
 
+                    // Interactive Horizontal Strip of User's 15 Squad Players
+                    Text(
+                        text = "Your Current Squad (Tap any player to transfer OUT):",
+                        fontSize = 11.sp,
+                        color = FplBrightPurple,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        squadPlayers.forEach { sp ->
+                            val isSelectedOut = outPlayer?.id == sp.id
+                            val spTeamShort = state.teamsById[sp.teamId]?.shortName ?: "FPL"
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .width(66.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(
+                                        if (isSelectedOut) Color(0xFF3B0D2C) else FplCardNavyLight
+                                    )
+                                    .border(
+                                        width = if (isSelectedOut) 1.5.dp else 1.dp,
+                                        color = if (isSelectedOut) FplOutCrimson else FplCardBorder,
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
+                                    .clickable { onSelectPlayerOut(sp) }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp)
+                            ) {
+                                PlayerPhotoAvatar(
+                                    player = sp,
+                                    teamShortName = spTeamShort,
+                                    size = 38.dp,
+                                    borderColor = if (isSelectedOut) FplOutCrimson else Color.White.copy(alpha = 0.6f)
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = sp.webName,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "${sp.positionName} • ${sp.formattedPrice}",
+                                    fontSize = 9.sp,
+                                    color = if (isSelectedOut) FplOutCrimson else FplTextSecondary,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    // Side-by-Side Out / In Cards (Clean layout with Real Faces)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // OUT Card (Crimson tint)
+                        // OUT Card
                         Card(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
@@ -2061,48 +2171,53 @@ fun TransfersMarketScreen(
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("⇄ Out", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = FplOutCrimson)
-                                    Text("1/2", fontSize = 11.sp, color = FplTextSecondary)
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        ClubKitIcon(teamShortName = outTeamShort, size = 40.dp)
-                                        Column {
-                                            Text(
-                                                text = outPlayer?.webName ?: "Haaland",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
-                                            )
-                                            Text(
-                                                text = "${outPlayer?.positionName ?: "FWD"} • $outTeamShort",
-                                                fontSize = 10.sp,
-                                                color = FplTextSecondary
-                                            )
-                                            Text(
-                                                text = outPlayer?.formattedPrice ?: "£14.2m",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
+                                    Text("⇄ Transfer Out", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = FplOutCrimson)
                                     Box(
                                         modifier = Modifier
-                                            .size(24.dp)
+                                            .size(20.dp)
                                             .clip(CircleShape)
                                             .background(FplOutCrimson),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(Icons.Default.Remove, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Remove, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (outPlayer != null) {
+                                        PlayerPhotoAvatar(
+                                            player = outPlayer,
+                                            teamShortName = outTeamShort,
+                                            size = 42.dp,
+                                            borderColor = FplOutCrimson
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = outPlayer?.webName ?: "Tap Squad",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${outPlayer?.positionName ?: "-"} • $outTeamShort",
+                                            fontSize = 10.sp,
+                                            color = FplTextSecondary,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = outPlayer?.formattedPrice ?: "-",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.White
+                                        )
                                     }
                                 }
                             }
@@ -2112,10 +2227,10 @@ fun TransfersMarketScreen(
                             Icons.Default.SwapHoriz,
                             contentDescription = null,
                             tint = FplTextSecondary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
 
-                        // IN Card (Emerald tint)
+                        // IN Card
                         Card(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
@@ -2125,48 +2240,53 @@ fun TransfersMarketScreen(
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Text("⇄ In", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = FplAccentGreen)
-                                    Text("1/2", fontSize = 11.sp, color = FplTextSecondary)
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        ClubKitIcon(teamShortName = inTeamShort, size = 40.dp)
-                                        Column {
-                                            Text(
-                                                text = inPlayer?.webName ?: "Isak",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp
-                                            )
-                                            Text(
-                                                text = "${inPlayer?.positionName ?: "FWD"} • $inTeamShort",
-                                                fontSize = 10.sp,
-                                                color = FplTextSecondary
-                                            )
-                                            Text(
-                                                text = inPlayer?.formattedPrice ?: "£8.9m",
-                                                fontSize = 12.sp,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
+                                    Text("⇄ Transfer In", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = FplAccentGreen)
                                     Box(
                                         modifier = Modifier
-                                            .size(24.dp)
+                                            .size(20.dp)
                                             .clip(CircleShape)
                                             .background(FplAccentGreen),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(13.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (inPlayer != null) {
+                                        PlayerPhotoAvatar(
+                                            player = inPlayer,
+                                            teamShortName = inTeamShort,
+                                            size = 42.dp,
+                                            borderColor = FplAccentGreen
+                                        )
+                                    }
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = inPlayer?.webName ?: "Tap Market",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "${inPlayer?.positionName ?: "-"} • $inTeamShort",
+                                            fontSize = 10.sp,
+                                            color = FplTextSecondary,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = inPlayer?.formattedPrice ?: "-",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = Color.White
+                                        )
                                     }
                                 }
                             }
@@ -2200,22 +2320,22 @@ fun TransfersMarketScreen(
             }
         }
 
-        // Sub-Tabs (All Players | Watchlist | My Squad) + Search Field
+        // Sub-Tabs (All Players | Watchlist | My Squad) + Fixed Search Pill (No vertical clipping!)
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier
-                        .weight(1.25f)
+                        .fillMaxWidth()
                         .clip(RoundedCornerShape(22.dp))
                         .background(FplCardNavy)
                         .border(1.dp, FplCardBorder, RoundedCornerShape(22.dp))
                         .padding(3.dp)
                 ) {
-                    val tabs = listOf("All Players", "Watchlist", "My Squad")
+                    val tabs = listOf(
+                        "All Players",
+                        "Watchlist (${state.watchlistIds.size})",
+                        "My Squad (15)"
+                    )
                     tabs.forEachIndexed { idx, title ->
                         val selected = state.transferSubTab == idx
                         Box(
@@ -2224,7 +2344,7 @@ fun TransfersMarketScreen(
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(if (selected) FplElectricPurple else Color.Transparent)
                                 .clickable { onSelectSubTab(idx) }
-                                .padding(vertical = 7.dp),
+                                .padding(vertical = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
@@ -2238,25 +2358,55 @@ fun TransfersMarketScreen(
                     }
                 }
 
-                OutlinedTextField(
-                    value = state.transferSearchQuery,
-                    onValueChange = onSearchChange,
+                // Clean custom search bar so placeholder text is never cut off
+                Row(
                     modifier = Modifier
-                        .weight(0.95f)
-                        .height(44.dp),
-                    placeholder = { Text("Search...", fontSize = 11.sp) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(22.dp),
-                    leadingIcon = {
-                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp))
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = FplCardNavy,
-                        unfocusedContainerColor = FplCardNavy,
-                        focusedBorderColor = FplBrightPurple,
-                        unfocusedBorderColor = FplCardBorder
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(FplCardNavy)
+                        .border(1.dp, FplCardBorder, RoundedCornerShape(22.dp))
+                        .padding(horizontal = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = "Search",
+                        tint = FplTextSecondary,
+                        modifier = Modifier.size(18.dp)
                     )
-                )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (state.transferSearchQuery.isEmpty()) {
+                            Text(
+                                text = "Search player name...",
+                                color = FplTextSecondary,
+                                fontSize = 13.sp
+                            )
+                        }
+                        BasicTextField(
+                            value = state.transferSearchQuery,
+                            onValueChange = onSearchChange,
+                            singleLine = true,
+                            textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+                            cursorBrush = SolidColor(FplBrightPurple),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    if (state.transferSearchQuery.isNotEmpty()) {
+                        Icon(
+                            Icons.Default.Clear,
+                            contentDescription = "Clear",
+                            tint = FplTextSecondary,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable { onSearchChange("") }
+                        )
+                    }
+                }
             }
         }
 
@@ -2285,7 +2435,7 @@ fun TransfersMarketScreen(
             }
         }
 
-        // 4 Grouped Position Sections (Forwards, Midfielders, Defenders, Goalkeepers)
+        // 4 Grouped Position Sections
         val sections = listOf(
             Triple(4, "Forwards", Color(0xFF10B981)),
             Triple(3, "Midfielders", Color(0xFF38BDF8)),
@@ -2297,15 +2447,18 @@ fun TransfersMarketScreen(
             if (state.transferPositionFilter == null || state.transferPositionFilter == elementType) {
                 val sectionPlayers = state.filteredTransferPlayers
                     .filter { it.elementType == elementType }
-                    .take(if (state.transferPositionFilter == null) 4 else 25)
+                    .take(if (state.transferPositionFilter == null) 6 else 35)
 
                 item(key = "section_$elementType") {
                     TransferPositionSectionCard(
                         title = sectionTitle,
                         dotColor = dotColor,
                         players = sectionPlayers,
+                        draftSquadIds = state.draftSquadIds,
+                        watchlistIds = state.watchlistIds,
                         teamsById = state.teamsById,
-                        onAddPlayer = onSelectPlayerIn,
+                        onSelectPlayer = onSelectPlayerIn,
+                        onToggleWatchlist = onToggleWatchlist,
                         onPlayerClick = onPlayerClick,
                         onViewAll = { onSelectPosFilter(elementType) }
                     )
@@ -2320,8 +2473,11 @@ fun TransferPositionSectionCard(
     title: String,
     dotColor: Color,
     players: List<PlayerDto>,
+    draftSquadIds: List<Int>,
+    watchlistIds: Set<Int>,
     teamsById: Map<Int, com.example.fpl.data.model.TeamDto>,
-    onAddPlayer: (PlayerDto) -> Unit,
+    onSelectPlayer: (PlayerDto) -> Unit,
+    onToggleWatchlist: (Int) -> Unit,
     onPlayerClick: (Int) -> Unit,
     onViewAll: () -> Unit
 ) {
@@ -2360,18 +2516,17 @@ fun TransferPositionSectionCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Column Headers
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Player", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(1.7f))
-                Text("Team", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.9f))
-                Text("Price", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.75f))
-                Text("Form", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.65f))
-                Text("Selected", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
+                Text("Tap to Pick", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(1.9f))
+                Text("Team", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.75f))
+                Text("Price", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.7f))
+                Text("Pts", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.6f))
+                Text("Info", fontSize = 11.sp, color = FplTextSecondary, modifier = Modifier.weight(0.55f), textAlign = TextAlign.End)
             }
 
             HorizontalDivider(color = FplCardBorder)
@@ -2379,16 +2534,19 @@ fun TransferPositionSectionCard(
             players.forEachIndexed { idx, player ->
                 val team = teamsById[player.teamId]
                 val teamShort = team?.shortName ?: "FPL"
+                val isInSquad = draftSquadIds.contains(player.id)
+                val isWatched = watchlistIds.contains(player.id)
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onPlayerClick(player.id) }
+                        .clickable { onSelectPlayer(player) }
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Player column (+ button, Shirt, Name)
+                    // Player column (+ or - button, Real Face Photo, Name)
                     Row(
-                        modifier = Modifier.weight(1.7f),
+                        modifier = Modifier.weight(1.9f),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -2396,37 +2554,53 @@ fun TransferPositionSectionCard(
                             modifier = Modifier
                                 .size(24.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF3B82F6).copy(alpha = 0.25f))
-                                .border(1.dp, Color(0xFF60A5FA), CircleShape)
-                                .clickable { onAddPlayer(player) },
+                                .background(
+                                    if (isInSquad) FplOutCrimson.copy(alpha = 0.25f)
+                                    else FplAccentGreen.copy(alpha = 0.25f)
+                                )
+                                .border(
+                                    1.dp,
+                                    if (isInSquad) FplOutCrimson else FplAccentGreen,
+                                    CircleShape
+                                )
+                                .clickable { onSelectPlayer(player) },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "Transfer In", tint = Color.White, modifier = Modifier.size(14.dp))
+                            Icon(
+                                imageVector = if (isInSquad) Icons.Default.Remove else Icons.Default.Add,
+                                contentDescription = "Select",
+                                tint = if (isInSquad) FplOutCrimson else FplAccentGreen,
+                                modifier = Modifier.size(14.dp)
+                            )
                         }
-                        ClubKitIcon(
+                        PlayerPhotoAvatar(
+                            player = player,
                             teamShortName = teamShort,
-                            isGoalkeeper = player.elementType == 1,
-                            size = 32.dp
+                            size = 34.dp
                         )
                         Column {
                             Text(
                                 text = player.webName,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Text(player.positionName, fontSize = 10.sp, color = FplTextSecondary)
+                            Text(
+                                text = if (isInSquad) "IN SQUAD" else player.positionName,
+                                fontSize = 9.sp,
+                                color = if (isInSquad) FplAccentGreen else FplTextSecondary
+                            )
                         }
                     }
 
                     // Team column
                     Row(
-                        modifier = Modifier.weight(0.9f),
+                        modifier = Modifier.weight(0.75f),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        ClubCrestBadge(teamCode = team?.code ?: 3, teamShortName = teamShort, size = 18.dp)
+                        ClubCrestBadge(teamCode = team?.code ?: 3, teamShortName = teamShort, size = 16.dp)
                         Text(teamShort, fontSize = 11.sp, color = Color.White.copy(alpha = 0.9f))
                     }
 
@@ -2435,19 +2609,19 @@ fun TransferPositionSectionCard(
                         text = player.formattedPrice,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(0.75f)
+                        modifier = Modifier.weight(0.7f)
                     )
 
-                    // Form pill column
-                    Box(modifier = Modifier.weight(0.65f)) {
+                    // Points pill column
+                    Box(modifier = Modifier.weight(0.6f)) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(8.dp))
                                 .background(Color(0xFF065F46))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
                         ) {
                             Text(
-                                text = player.form,
+                                text = "${player.totalPoints}",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = FplAccentGreen
@@ -2455,18 +2629,28 @@ fun TransferPositionSectionCard(
                         }
                     }
 
-                    // Selected % column
+                    // Watchlist Star + Profile Info Button
                     Row(
-                        modifier = Modifier.weight(0.8f),
+                        modifier = Modifier.weight(0.55f),
                         horizontalArrangement = Arrangement.End,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("${player.selectedByPercent}%", fontSize = 12.sp, color = Color.White)
                         Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = null,
-                            tint = FplTextSecondary,
-                            modifier = Modifier.size(16.dp)
+                            imageVector = if (isWatched) Icons.Default.Star else Icons.Default.StarBorder,
+                            contentDescription = "Watchlist",
+                            tint = if (isWatched) Color(0xFFFACC15) else FplTextSecondary,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable { onToggleWatchlist(player.id) }
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "Stats",
+                            tint = FplBrightPurple,
+                            modifier = Modifier
+                                .size(17.dp)
+                                .clickable { onPlayerClick(player.id) }
                         )
                     }
                 }
@@ -2479,7 +2663,7 @@ fun TransferPositionSectionCard(
 }
 
 // =========================================================================
-// SCREENSHOT 5: LEAGUES & CUPS TAB (MY LEAGUES, ALGERIA GLOBAL, CUPS)
+// LEAGUES & CUPS TAB
 // =========================================================================
 
 @Composable
@@ -2490,7 +2674,6 @@ fun LeaguesHubScreen(
     onCloseLeagueStandings: () -> Unit,
     onInspectRivalTeam: (Int) -> Unit
 ) {
-    // Standings drill-down if user tapped a league
     val standingsResp = state.selectedLeagueStandings
     if (standingsResp != null || state.isStandingsLoading) {
         Column(
@@ -2549,7 +2732,6 @@ fun LeaguesHubScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
-        // Header
         item {
             Column {
                 Text("Leagues", fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
@@ -2561,7 +2743,6 @@ fun LeaguesHubScreen(
             }
         }
 
-        // 4-Segment Bar: My Leagues | Public Leagues | Global Leagues | Cups
         item {
             val tabs = listOf("My Leagues", "Public Leagues", "Global Leagues", "Cups")
             Row(
@@ -2595,7 +2776,6 @@ fun LeaguesHubScreen(
             }
         }
 
-        // My Leagues Card
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -2632,7 +2812,6 @@ fun LeaguesHubScreen(
                             }
                         }
                     } else {
-                        // Exact rows from Screenshot 5
                         val showcaseLeagues = listOf(
                             Triple("Gameweek League", "Private league  •  8 members", "2" to "/ 8"),
                             Triple("Friends League", "Private league  •  12 members", "1" to "/ 12"),
@@ -2658,7 +2837,6 @@ fun LeaguesHubScreen(
             }
         }
 
-        // Global Leagues Card (Overall, Country Algeria, Gameweek)
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -2710,7 +2888,6 @@ fun LeaguesHubScreen(
             }
         }
 
-        // Cups Horizontal Section
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(14.dp)) {
@@ -2769,54 +2946,6 @@ fun LeaguesHubScreen(
                             subText = "Join now",
                             trophyTint = Color(0xFFD97706)
                         )
-                    }
-                }
-            }
-        }
-
-        // Create Your Own League Banner
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF23135A)),
-                border = BorderStroke(1.dp, FplBrightPurple)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.EmojiEvents,
-                            contentDescription = null,
-                            tint = FplBrightPurple,
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Column {
-                            Text("Create Your Own League", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(
-                                text = "Invite your friends or join a public league and start competing!",
-                                fontSize = 11.sp,
-                                color = Color.White.copy(alpha = 0.8f)
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {},
-                        shape = RoundedCornerShape(20.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = FplElectricPurple),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                    ) {
-                        Text("+ Create League", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -2956,7 +3085,7 @@ fun CupMiniCard(
 }
 
 // =========================================================================
-// SCREENSHOT 1: MORE TAB (PROFILE CARD, 4-ICON STATS, ACCOUNT/FANTASY/SUPPORT)
+// MORE TAB & PROFILE DIALOG (NO TEAM ID INPUT)
 // =========================================================================
 
 @Composable
@@ -2974,7 +3103,6 @@ fun MoreMenuScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
         contentPadding = PaddingValues(vertical = 10.dp)
     ) {
-        // 1. User Profile Header Card
         item {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -2991,11 +3119,12 @@ fun MoreMenuScreen(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(68.dp)
+                                .size(64.dp)
                                 .clip(CircleShape)
                                 .background(Color(0xFF311B70))
                                 .border(2.dp, FplBrightPurple, CircleShape),
@@ -3005,29 +3134,29 @@ fun MoreMenuScreen(
                                 Icons.Default.Person,
                                 contentDescription = null,
                                 tint = Color(0xFFC084FC),
-                                modifier = Modifier.size(40.dp)
+                                modifier = Modifier.size(36.dp)
                             )
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(
-                                text = state.currentEventName,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                            Text(
                                 text = state.managerHandle,
-                                fontSize = 13.sp,
-                                color = Color.White.copy(alpha = 0.85f)
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "Overall Rank:   ${state.displayOverallRank}",
+                                text = state.loggedInEmail,
                                 fontSize = 12.sp,
-                                color = FplTextSecondary
+                                color = Color.White.copy(alpha = 0.85f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "Total Points:     ${state.displayTotalPoints}",
-                                fontSize = 12.sp,
-                                color = FplTextSecondary
+                                text = "Rank: ${state.displayOverallRank} • ${state.displayTotalPoints} pts",
+                                fontSize = 11.sp,
+                                color = FplTextSecondary,
+                                maxLines = 1
                             )
                         }
                     }
@@ -3045,13 +3174,12 @@ fun MoreMenuScreen(
                             modifier = Modifier.size(14.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Edit Profile", fontSize = 11.sp, color = Color.White)
+                        Text("Edit", fontSize = 11.sp, color = Color.White)
                     }
                 }
             }
         }
 
-        // 2. 4-Column Icon Stats Card
         item {
             FplStyledCard(modifier = Modifier.fillMaxWidth()) {
                 Row(
@@ -3066,7 +3194,7 @@ fun MoreMenuScreen(
                         iconTint = FplBrightPurple,
                         label = "Team Value",
                         value = state.displayTeamValue,
-                        subText = "▲ £0.0m",
+                        subText = "Bank ${state.displayBankValue}",
                         subGreen = true
                     )
                     VerticalStatDivider()
@@ -3074,8 +3202,8 @@ fun MoreMenuScreen(
                         icon = Icons.Default.Groups,
                         iconTint = Color.White,
                         label = "Transfers",
-                        value = state.freeTransfers.toString(),
-                        subText = "(0 free)",
+                        value = state.freeTransfersRemaining.toString(),
+                        subText = "(${state.plannedTransfers.size} made)",
                         subGreen = false
                     )
                     VerticalStatDivider()
@@ -3093,53 +3221,48 @@ fun MoreMenuScreen(
                         iconTint = FplBrightPurple,
                         label = "Overall Rank",
                         value = state.displayOverallRank,
-                        subText = "▲ 18,342",
+                        subText = "▲ 18.3k",
                         subGreen = true
                     )
                 }
             }
         }
 
-        // 3. Account Section Card
         item {
             MoreMenuSectionCard(
                 sectionTitle = "Account",
                 sectionIcon = Icons.Default.Settings,
                 items = listOf(
-                    Triple(Icons.Default.Person, "Profile", "View and edit your profile details") to onEditProfileClick,
-                    Triple(Icons.Default.Notifications, "Notifications", "Manage your alerts and notifications") to {},
-                    Triple(Icons.Default.Settings, "App Settings", "Theme, language, and more") to {}
+                    Triple(Icons.Default.Person, "Profile", "Edit your manager display name") to onEditProfileClick,
+                    Triple(Icons.Default.Notifications, "Notifications", "Manage deadline and price alerts") to {},
+                    Triple(Icons.Default.Settings, "App Settings", "Theme, language, and preferences") to {}
                 )
             )
         }
 
-        // 4. Fantasy Section Card
         item {
             MoreMenuSectionCard(
                 sectionTitle = "Fantasy",
                 sectionIcon = Icons.Default.EmojiEvents,
                 items = listOf(
                     Triple(Icons.Default.CalendarToday, "Fixtures", "View upcoming fixtures and results") to onOpenFixtures,
-                    Triple(Icons.AutoMirrored.Filled.TrendingUp, "Player Points", "Check player points and stats") to onOpenPlayers,
-                    Triple(Icons.Default.Description, "Rules & Scoring", "How points are calculated") to {}
+                    Triple(Icons.AutoMirrored.Filled.TrendingUp, "Player Market", "Browse players and make transfers") to onOpenPlayers,
+                    Triple(Icons.Default.Description, "Rules & Scoring", "How FPL points are calculated") to {}
                 )
             )
         }
 
-        // 5. Support Section Card
         item {
             MoreMenuSectionCard(
                 sectionTitle = "Support",
                 sectionIcon = Icons.AutoMirrored.Filled.HelpOutline,
                 items = listOf(
                     Triple(Icons.Default.Support, "Help & FAQ", "Find answers to common questions") to {},
-                    Triple(Icons.Default.Email, "Contact Us", "Get in touch with our support team") to {},
-                    Triple(Icons.Default.Description, "Terms & Conditions", "Read our terms and conditions") to {}
+                    Triple(Icons.Default.Email, "Contact Us", "Get in touch with our support team") to {}
                 )
             )
         }
 
-        // 6. Crimson Log Out Card
         item {
             Card(
                 modifier = Modifier
@@ -3193,15 +3316,16 @@ fun MoreStatIconColumn(
     subGreen: Boolean
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(22.dp))
+        Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(20.dp))
         Spacer(modifier = Modifier.height(4.dp))
-        Text(label, fontSize = 11.sp, color = FplTextSecondary)
-        Text(value, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+        Text(label, fontSize = 10.sp, color = FplTextSecondary, maxLines = 1)
+        Text(value, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, maxLines = 1)
         Text(
             text = subText,
-            fontSize = 10.sp,
+            fontSize = 9.sp,
             color = if (subGreen) FplAccentGreen else FplTextSecondary,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
         )
     }
 }
@@ -3266,56 +3390,41 @@ fun MoreMenuSectionCard(
     }
 }
 
-// =========================================================================
-// EDIT PROFILE / SYNC LIVE FPL TEAM ID DIALOG + SECONDARY SCREENS
-// =========================================================================
-
 @Composable
-fun EditProfileAndTeamIdDialog(
+fun EditProfileDialog(
     state: FplUiState,
     onDismiss: () -> Unit,
-    onSave: (handle: String, teamId: String) -> Unit
+    onSave: (handle: String) -> Unit
 ) {
     var handle by remember { mutableStateOf(state.managerHandle) }
-    var teamId by remember { mutableStateOf(state.teamIdInput) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = FplCardNavy,
         title = {
-            Text("Edit Profile & Sync FPL Squad", fontWeight = FontWeight.Bold, color = Color.White)
+            Text("Edit Manager Profile", fontWeight = FontWeight.Bold, color = Color.White)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Enter your username and numeric FPL Team ID to sync your live Premier League squad, points, rank, and leagues.",
+                    text = "Signed in as ${state.loggedInEmail}",
                     fontSize = 12.sp,
-                    color = FplTextSecondary
+                    color = FplAccentGreen
                 )
                 OutlinedTextField(
                     value = handle,
                     onValueChange = { handle = it },
-                    label = { Text("Manager Username") },
+                    label = { Text("Manager Display Handle") },
                     singleLine = true
-                )
-                OutlinedTextField(
-                    value = teamId,
-                    onValueChange = { teamId = it.filter { c -> c.isDigit() } },
-                    label = { Text("FPL Team ID (e.g. 123456)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    )
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSave(handle, teamId) },
+                onClick = { onSave(handle) },
                 colors = ButtonDefaults.buttonColors(containerColor = FplElectricPurple)
             ) {
-                Text("Save & Sync")
+                Text("Save")
             }
         },
         dismissButton = {
@@ -3340,6 +3449,7 @@ fun PlayerDetailScreen(
         return
     }
     val team = state.teamsById[player.teamId]
+    val teamShort = team?.shortName ?: "ARS"
 
     LazyColumn(
         modifier = Modifier
@@ -3352,10 +3462,11 @@ fun PlayerDetailScreen(
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
-                ClubKitIcon(
-                    teamShortName = team?.shortName ?: "ARS",
-                    isGoalkeeper = player.elementType == 1,
-                    size = 54.dp
+                PlayerPhotoAvatar(
+                    player = player,
+                    teamShortName = teamShort,
+                    size = 64.dp,
+                    borderColor = FplAccentGreen
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Column {
@@ -3385,10 +3496,10 @@ fun PlayerDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        HomeStatCell("Total Pts", player.totalPoints.toString(), "", "")
-                        HomeStatCell("GW Pts", player.eventPoints.toString(), "", "")
-                        HomeStatCell("Form", player.form, "", "")
-                        HomeStatCell("Selected", "${player.selectedByPercent}%", "", "")
+                        HomeStatCell(Modifier.weight(1f), "Total Pts", player.totalPoints.toString(), "", "")
+                        HomeStatCell(Modifier.weight(1f), "GW Pts", player.eventPoints.toString(), "", "")
+                        HomeStatCell(Modifier.weight(1f), "Form", player.form, "", "")
+                        HomeStatCell(Modifier.weight(1f), "Selected", "${player.selectedByPercent}%", "", "")
                     }
                 }
             }
@@ -3475,7 +3586,13 @@ fun FixturesScreen(
                             horizontalArrangement = Arrangement.End,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(hTeam?.name ?: "Home", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(
+                                text = hTeam?.name ?: "Home",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                             ClubCrestBadge(teamCode = hTeam?.code ?: 3, teamShortName = hTeam?.shortName ?: "HOM")
                         }
@@ -3494,7 +3611,13 @@ fun FixturesScreen(
                         ) {
                             ClubCrestBadge(teamCode = aTeam?.code ?: 4, teamShortName = aTeam?.shortName ?: "AWY")
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(aTeam?.name ?: "Away", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text(
+                                text = aTeam?.name ?: "Away",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
                 }
