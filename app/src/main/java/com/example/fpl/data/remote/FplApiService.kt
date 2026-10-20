@@ -17,17 +17,17 @@ import retrofit2.Response
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
-import retrofit2.http.Field
-import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
-import retrofit2.http.Url
 import java.util.concurrent.TimeUnit
 
 class SessionCookieJar : CookieJar {
     private val cookieStore = mutableMapOf<String, MutableList<Cookie>>()
+
+    @Volatile
+    var bearerToken: String? = null
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         val list = cookieStore.getOrPut(url.host) { mutableListOf() }
@@ -35,7 +35,6 @@ class SessionCookieJar : CookieJar {
             list.removeAll { it.name == newCookie.name }
             list.add(newCookie)
         }
-        // Share Premier League auth cookies across subdomains
         if (url.host.contains("premierleague.com")) {
             val shared = cookieStore.getOrPut("premierleague.com") { mutableListOf() }
             cookies.forEach { newCookie ->
@@ -59,13 +58,16 @@ class SessionCookieJar : CookieJar {
     }
 
     fun hasSessionCookies(): Boolean {
+        if (!bearerToken.isNullOrBlank()) return true
         return cookieStore.values.flatten().any {
             it.name.contains("pl_profile", ignoreCase = true) ||
-                it.name.contains("session", ignoreCase = true)
+                it.name.contains("session", ignoreCase = true) ||
+                it.name.contains("interaction", ignoreCase = true)
         }
     }
 
     fun clear() {
+        bearerToken = null
         cookieStore.clear()
     }
 }
@@ -102,16 +104,6 @@ interface FplApiService {
         @Query("page_standings") page: Int = 1
     ): LeagueStandingsResponse
 
-    @FormUrlEncoded
-    @POST
-    suspend fun loginPremierLeague(
-        @Url loginUrl: String = "https://users.premierleague.com/accounts/login/",
-        @Field("login") email: String,
-        @Field("password") password: String,
-        @Field("app") app: String = "plfpl-web",
-        @Field("redirect_uri") redirectUri: String = "https://fantasy.premierleague.com/a/login"
-    ): Response<ResponseBody>
-
     @GET("me/")
     suspend fun getAuthenticatedUser(): MeResponse
 
@@ -122,32 +114,40 @@ interface FplApiService {
 
     companion object {
         private const val BASE_URL = "https://fantasy.premierleague.com/api/"
-        private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+        const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36"
 
         val cookieJar = SessionCookieJar()
 
-        fun create(): FplApiService {
-            val client = OkHttpClient.Builder()
+        val okHttpClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
                 .cookieJar(cookieJar)
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .connectTimeout(25, TimeUnit.SECONDS)
                 .readTimeout(25, TimeUnit.SECONDS)
                 .addInterceptor { chain ->
-                    val request = chain.request().newBuilder()
+                    val builder = chain.request().newBuilder()
                         .header("User-Agent", USER_AGENT)
                         .header("Accept", "application/json, text/plain, */*")
                         .header("Origin", "https://fantasy.premierleague.com")
                         .header("Referer", "https://fantasy.premierleague.com/")
-                        .build()
-                    chain.proceed(request)
+
+                    val token = cookieJar.bearerToken
+                    if (!token.isNullOrBlank()) {
+                        builder.header("X-API-Authorization", "Bearer $token")
+                        builder.header("Authorization", "Bearer $token")
+                    }
+
+                    chain.proceed(builder.build())
                 }
                 .build()
+        }
 
+        fun create(): FplApiService {
             return Retrofit.Builder()
                 .baseUrl(BASE_URL)
-                .client(client)
+                .client(okHttpClient)
                 .addConverterFactory(GsonConverterFactory.create())
                 .build()
                 .create(FplApiService::class.java)
